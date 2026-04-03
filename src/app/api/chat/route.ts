@@ -74,52 +74,28 @@ export async function POST(req: NextRequest) {
   try {
     const { messages, language } = await req.json();
 
-    // Check for Anthropic API key
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    // Flag-based provider selection: anthropic | sarvam | demo
+    const provider = process.env.AI_PROVIDER || "demo";
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const sarvamKey = process.env.SARVAM_API_KEY;
 
-    if (!apiKey) {
-      // Fallback: Simple rule-based responses for demo without API key
-      return NextResponse.json(getDemoResponse(messages, language || "en"));
-    }
+    // Detect language from latest message
+    const rawMsg = messages[messages.length - 1]?.content || "";
+    const detectedLang = detectLanguage(rawMsg) || language || "en";
+    const langName = LANG_NAMES[detectedLang] || "English";
 
-    // Add language instruction to system prompt
-    const langInstruction = language && language !== "en"
-      ? `\n\nIMPORTANT: The customer is speaking in ${LANG_NAMES[language] || language}. You MUST respond in ${LANG_NAMES[language] || language}. Do NOT respond in English unless they switch to English.`
-      : "";
-
-    // Call Claude API
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 500,
-        system: SYSTEM_PROMPT + langInstruction,
-        messages: messages.map((m: { role: string; content: string }) => ({
-          role: m.role,
-          content: m.content,
-        })),
-      }),
-    });
-
-    const data = await response.json();
-    const text = data.content?.[0]?.text || "I'm sorry, could you repeat that?";
-
-    // Try to parse JSON response
-    try {
-      const parsed = JSON.parse(text);
-      return NextResponse.json(parsed);
-    } catch {
-      // If not JSON, wrap it
-      return NextResponse.json({
-        reply: text,
-        emotion: "happy",
-        productsToShow: [],
-      });
+    // Route to provider
+    if (provider === "anthropic" && anthropicKey) {
+      return await handleAnthropic(messages, anthropicKey, detectedLang, langName);
+    } else if (provider === "sarvam" && sarvamKey) {
+      // TODO: Implement Sarvam AI integration
+      // For now, fall through to demo
+      return NextResponse.json(getDemoResponse(messages, detectedLang));
+    } else if (anthropicKey) {
+      // If no provider set but key exists, use Anthropic
+      return await handleAnthropic(messages, anthropicKey, detectedLang, langName);
+    } else {
+      return NextResponse.json(getDemoResponse(messages, detectedLang));
     }
   } catch (error) {
     console.error("Chat API error:", error);
@@ -127,6 +103,51 @@ export async function POST(req: NextRequest) {
       reply: "I'm sorry, I'm having trouble right now. Could you try again?",
       emotion: "empathetic",
       productsToShow: [],
+    });
+  }
+}
+
+async function handleAnthropic(
+  messages: { role: string; content: string }[],
+  apiKey: string,
+  detectedLang: string,
+  langName: string,
+) {
+  const langInstruction = detectedLang !== "en"
+    ? `\n\nIMPORTANT: The customer is speaking in ${langName}. You MUST respond in ${langName}. Do NOT respond in English unless they switch to English.`
+    : "";
+
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      system: SYSTEM_PROMPT + langInstruction,
+      messages: messages.map((m: { role: string; content: string }) => ({
+        role: m.role,
+        content: m.content,
+      })),
+    }),
+  });
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text || "I'm sorry, could you repeat that?";
+
+  // Try to parse JSON response
+  try {
+    const parsed = JSON.parse(text);
+    return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
+  } catch {
+    return NextResponse.json({
+      reply: text,
+      emotion: "happy",
+      productsToShow: [],
+      detectedLanguage: detectedLang,
     });
   }
 }
