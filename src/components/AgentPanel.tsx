@@ -31,20 +31,35 @@ const LANG_CODES: Record<string, { speech: string; name: string; greeting: strin
   ur: { speech: "ur-IN", name: "اردو", greeting: "آداب" },
 };
 
+// Detect default language from browser locale
+function detectDefaultLang(): string {
+  if (typeof navigator === "undefined") return "en";
+  const browserLang = navigator.language?.split("-")[0]?.toLowerCase() || "en";
+  // Map browser locale to our supported languages
+  const mapping: Record<string, string> = {
+    hi: "hi", te: "te", ta: "ta", kn: "kn", ml: "ml",
+    bn: "bn", mr: "mr", gu: "gu", pa: "pa", or: "or", ur: "ur",
+  };
+  return mapping[browserLang] || "hi"; // Default to Hindi for Indian users
+}
+
 export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: string) => void }) {
+  const detectedLang = detectDefaultLang();
+  const greeting = LANG_CODES[detectedLang]?.greeting || "Namaste";
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: "Namaste! 🙏 Welcome to Sundari Silks! I'm Priya, your personal shopping assistant.\n\nAre you looking for something special today — a wedding saree, daily wear, or something for a festival?\n\n🎤 You can also speak to me in any Indian language!",
+      content: `${greeting}! Welcome to Sundari Silks! I'm Priya, your personal shopping assistant.\n\nAre you looking for something special today — a wedding saree, daily wear, or something for a festival?\n\nYou can also speak to me in any Indian language!`,
       emotion: "greeting",
     },
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState("greeting");
   const [isListening, setIsListening] = useState(false);
-  const [selectedLang, setSelectedLang] = useState("en");
+  const [selectedLang, setSelectedLang] = useState(detectedLang);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -199,8 +214,10 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
         setSelectedLang(data.detectedLanguage);
       }
 
-      // Auto-speak the response
-      speakText(data.reply, data.detectedLanguage || selectedLang);
+      // Only speak if user has interacted (not auto-triggered)
+      if (messages.length > 1) {
+        speakText(data.reply, data.detectedLanguage || selectedLang);
+      }
 
       if (data.productsToShow?.length && onNavigate) {
         onNavigate(data.productsToShow[0]);
@@ -217,12 +234,28 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
 
   if (!isOpen) {
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 w-16 h-16 bg-pink-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl hover:bg-pink-700 transition-colors z-50 animate-bounce"
-      >
-        🙏
-      </button>
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {/* Greeting bubble */}
+        <div className="bg-white rounded-2xl rounded-br-md shadow-lg border border-gray-200 p-4 max-w-xs animate-fade-in">
+          <button onClick={() => setIsOpen(true)} className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-sm">✕</button>
+          <p className="text-sm text-gray-800 mb-2">
+            {greeting}! {detectedLang === "hi" ? "Hum aapke AI shopping assistant hai. Aapko kharidi mein madad kar sakte hai." : "I'm your AI shopping assistant. I can help you find the perfect product."}
+          </p>
+          <button
+            onClick={() => setIsOpen(true)}
+            className="text-sm bg-pink-600 text-white px-4 py-2 rounded-full hover:bg-pink-700 transition-colors w-full"
+          >
+            {detectedLang === "hi" ? "Baat karein" : "Start Shopping"}
+          </button>
+        </div>
+        {/* Avatar button */}
+        <button
+          onClick={() => setIsOpen(true)}
+          className="w-16 h-16 bg-gradient-to-r from-pink-600 to-purple-600 text-white rounded-full shadow-lg flex items-center justify-center text-2xl hover:scale-110 transition-transform"
+        >
+          🙏
+        </button>
+      </div>
     );
   }
 
