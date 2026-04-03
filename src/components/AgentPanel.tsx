@@ -123,16 +123,27 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
       recognitionRef.current.stop();
       setIsListening(false);
     } else {
+      // Stop agent speech when user starts speaking
+      if (isSpeaking) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+      }
       setInput("");
       recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
       recognitionRef.current.start();
       setIsListening(true);
     }
-  }, [isListening, selectedLang]);
+  }, [isListening, selectedLang, isSpeaking]);
 
   // Text-to-Speech for agent responses
   const speakText = useCallback((text: string, lang: string = selectedLang) => {
     if (!("speechSynthesis" in window)) return;
+
+    // Stop listening when agent speaks (avoid feedback loop)
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
 
     // Cancel any ongoing speech
     window.speechSynthesis.cancel();

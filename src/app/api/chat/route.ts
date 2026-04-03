@@ -50,17 +50,42 @@ When recommending products, format like:
 
 Respond with JSON: { "reply": "your message", "emotion": "greeting|excited|happy|thinking|empathetic|conspiratorial|proud|patient|celebratory", "productsToShow": ["product_id1"] }`;
 
+const LANG_NAMES: Record<string, string> = {
+  hi: "Hindi", te: "Telugu", ta: "Tamil", kn: "Kannada", ml: "Malayalam",
+  bn: "Bengali", mr: "Marathi", gu: "Gujarati", pa: "Punjabi", or: "Odia", ur: "Urdu",
+};
+
+// Detect language from text using Unicode ranges
+function detectLanguage(text: string): string | null {
+  if (/[\u0A80-\u0AFF]/.test(text)) return "gu"; // Gujarati
+  if (/[\u0900-\u097F]/.test(text)) return "hi"; // Devanagari (Hindi/Marathi)
+  if (/[\u0C00-\u0C7F]/.test(text)) return "te"; // Telugu
+  if (/[\u0B80-\u0BFF]/.test(text)) return "ta"; // Tamil
+  if (/[\u0C80-\u0CFF]/.test(text)) return "kn"; // Kannada
+  if (/[\u0D00-\u0D7F]/.test(text)) return "ml"; // Malayalam
+  if (/[\u0980-\u09FF]/.test(text)) return "bn"; // Bengali
+  if (/[\u0A00-\u0A7F]/.test(text)) return "pa"; // Punjabi
+  if (/[\u0B00-\u0B7F]/.test(text)) return "or"; // Odia
+  if (/[\u0600-\u06FF]/.test(text)) return "ur"; // Urdu/Arabic
+  return null;
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { messages } = await req.json();
+    const { messages, language } = await req.json();
 
     // Check for Anthropic API key
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
       // Fallback: Simple rule-based responses for demo without API key
-      return NextResponse.json(getDemoResponse(messages));
+      return NextResponse.json(getDemoResponse(messages, language || "en"));
     }
+
+    // Add language instruction to system prompt
+    const langInstruction = language && language !== "en"
+      ? `\n\nIMPORTANT: The customer is speaking in ${LANG_NAMES[language] || language}. You MUST respond in ${LANG_NAMES[language] || language}. Do NOT respond in English unless they switch to English.`
+      : "";
 
     // Call Claude API
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -73,7 +98,7 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         model: "claude-haiku-4-5-20251001",
         max_tokens: 500,
-        system: SYSTEM_PROMPT,
+        system: SYSTEM_PROMPT + langInstruction,
         messages: messages.map((m: { role: string; content: string }) => ({
           role: m.role,
           content: m.content,
@@ -106,8 +131,39 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function getDemoResponse(messages: { role: string; content: string }[]): { reply: string; emotion: string; productsToShow: string[] } {
+function getDemoResponse(messages: { role: string; content: string }[], language: string): { reply: string; emotion: string; productsToShow: string[]; detectedLanguage?: string } {
   const lastMsg = messages[messages.length - 1]?.content?.toLowerCase() || "";
+  const rawMsg = messages[messages.length - 1]?.content || "";
+
+  // Detect language from typed text (Unicode script detection)
+  const detectedLang = detectLanguage(rawMsg) || language || "en";
+
+  // Language-specific greetings and responses
+  const greetings: Record<string, { hello: string; help: string; occasion: string; budget: string }> = {
+    hi: { hello: "नमस्ते", help: "मैं आपकी मदद करना चाहूंगी", occasion: "आप किस अवसर के लिए खरीदारी कर रहे हैं? (शादी, त्योहार, रोज़ का?)", budget: "आपका बजट क्या है?" },
+    gu: { hello: "નમસ્તે", help: "હું તમને મદદ કરવા માંગુ છું", occasion: "તમે કયા પ્રસંગ માટે ખરીદી કરો છો? (લગ્ન, તહેવાર, રોજિંદા?)", budget: "તમારું બજેટ શું છે?" },
+    te: { hello: "నమస్కారం", help: "నేను మీకు సహాయం చేయాలనుకుంటున్నాను", occasion: "మీరు ఏ సందర్భం కోసం షాపింగ్ చేస్తున్నారు? (పెళ్లి, పండుగ, రోజువారీ?)", budget: "మీ బడ్జెట్ ఎంత?" },
+    ta: { hello: "வணக்கம்", help: "நான் உங்களுக்கு உதவ விரும்புகிறேன்", occasion: "நீங்கள் எந்த நிகழ்விற்காக ஷாப்பிங் செய்கிறீர்கள்? (திருமணம், பண்டிகை, தினசரி?)", budget: "உங்கள் பட்ஜெட் என்ன?" },
+    kn: { hello: "ನಮಸ್ಕಾರ", help: "ನಾನು ನಿಮಗೆ ಸಹಾಯ ಮಾಡಲು ಬಯಸುತ್ತೇನೆ", occasion: "ನೀವು ಯಾವ ಸಂದರ್ಭಕ್ಕಾಗಿ ಶಾಪಿಂಗ್ ಮಾಡುತ್ತಿದ್ದೀರಿ?", budget: "ನಿಮ್ಮ ಬಜೆಟ್ ಎಷ್ಟು?" },
+    ml: { hello: "നമസ്കാരം", help: "ഞാൻ നിങ്ങളെ സഹായിക്കാൻ ആഗ്രഹിക്കുന്നു", occasion: "ഏത് അവസരത്തിനാണ് ഷോപ്പിംഗ്?", budget: "നിങ്ങളുടെ ബജറ്റ് എത്ര?" },
+    bn: { hello: "নমস্কার", help: "আমি আপনাকে সাহায্য করতে চাই", occasion: "আপনি কোন উপলক্ষে কেনাকাটা করছেন?", budget: "আপনার বাজেট কত?" },
+    mr: { hello: "नमस्कार", help: "मला तुम्हाला मदत करायला आवडेल", occasion: "तुम्ही कोणत्या प्रसंगासाठी खरेदी करत आहात?", budget: "तुमचे बजेट काय आहे?" },
+    pa: { hello: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ", help: "ਮੈਂ ਤੁਹਾਡੀ ਮਦਦ ਕਰਨਾ ਚਾਹੁੰਦੀ ਹਾਂ", occasion: "ਤੁਸੀਂ ਕਿਸ ਮੌਕੇ ਲਈ ਖਰੀਦਦਾਰੀ ਕਰ ਰਹੇ ਹੋ?", budget: "ਤੁਹਾਡਾ ਬਜਟ ਕੀ ਹੈ?" },
+    or: { hello: "ନମସ୍କାର", help: "ମୁଁ ଆପଣଙ୍କୁ ସାହାଯ୍ୟ କରିବାକୁ ଚାହେଁ", occasion: "ଆପଣ କେଉଁ ଉତ୍ସବ ପାଇଁ ଖରୀଦ କରୁଛନ୍ତି?", budget: "ଆପଣଙ୍କ ବଜେଟ କେତେ?" },
+    ur: { hello: "آداب", help: "میں آپ کی مدد کرنا چاہتی ہوں", occasion: "آپ کس موقع کے لیے خریداری کر رہے ہیں؟", budget: "آپ کا بجٹ کیا ہے؟" },
+  };
+
+  // If non-English language detected, respond in that language
+  if (detectedLang !== "en" && greetings[detectedLang]) {
+    const g = greetings[detectedLang];
+    const best = products.sort((a, b) => b.reviewCount - a.reviewCount).slice(0, 3);
+    return {
+      reply: `${g.hello}! ${g.help}.\n\n${g.occasion}\n\n${best.map((p, i) => `${i + 1}. **${p.name}** — ₹${p.price.toLocaleString()} (★${p.rating})`).join("\n")}\n\n${g.budget}`,
+      emotion: "greeting",
+      productsToShow: best.map(p => p.id),
+      detectedLanguage: detectedLang,
+    };
+  }
 
   // Simple keyword matching for demo
   if (lastMsg.includes("wedding") || lastMsg.includes("शादी") || lastMsg.includes("kalyanam")) {
