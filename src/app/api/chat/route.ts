@@ -125,7 +125,7 @@ async function handleAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-3-haiku-20240307",
       max_tokens: 500,
       system: SYSTEM_PROMPT + langInstruction,
       messages: messages.map((m: { role: string; content: string }) => ({
@@ -136,6 +136,14 @@ async function handleAnthropic(
   });
 
   const data = await response.json();
+  if (data.error) {
+    console.error("Anthropic API error:", JSON.stringify(data.error));
+    return NextResponse.json({
+      reply: `API Error: ${data.error?.message || "Unknown error"}. Using demo mode.`,
+      emotion: "empathetic",
+      productsToShow: [],
+    });
+  }
   const text = data.content?.[0]?.text || "I'm sorry, could you repeat that?";
 
   // Try to parse JSON response
