@@ -40,20 +40,14 @@ function detectDefaultLang(): string {
     hi: "hi", te: "te", ta: "ta", kn: "kn", ml: "ml",
     bn: "bn", mr: "mr", gu: "gu", pa: "pa", or: "or", ur: "ur",
   };
-  return mapping[browserLang] || "hi"; // Default to Hindi for Indian users
+  return mapping[browserLang] || "en"; // Default to English, user can switch via picker
 }
 
 export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: string) => void }) {
   const detectedLang = detectDefaultLang();
   const greeting = LANG_CODES[detectedLang]?.greeting || "Namaste";
 
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content: `${greeting}! Welcome to Sundari Silks! I'm Priya, your personal shopping assistant.\n\nAre you looking for something special today — a wedding saree, daily wear, or something for a festival?\n\nYou can also speak to me in any Indian language!`,
-      emotion: "greeting",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
@@ -62,6 +56,7 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
   const [selectedLang, setSelectedLang] = useState(detectedLang);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
+  const [langChosen, setLangChosen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -200,6 +195,21 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
     setIsSpeaking(false);
   }, []);
 
+  // Handle language selection from the initial prompt
+  const handleLangSelect = useCallback((lang: string) => {
+    setSelectedLang(lang);
+    setLangChosen(true);
+    const langGreeting = LANG_CODES[lang]?.greeting || "Hello";
+    const langName = LANG_CODES[lang]?.name || "English";
+    setMessages([
+      {
+        role: "assistant",
+        content: `${langGreeting}! I'm Priya, your personal shopping assistant at Sundari Silks.\n\nI'll help you in ${langName}. What are you looking for today — a wedding saree, daily wear, or something for a festival?`,
+        emotion: "greeting",
+      },
+    ]);
+  }, []);
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
 
@@ -247,7 +257,7 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
       }
 
       if (data.productsToShow?.length && onNavigate) {
-        onNavigate(data.productsToShow[0]);
+        onNavigate(data.productsToShow);
       }
     } catch {
       setMessages((prev) => [
@@ -314,7 +324,7 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
         <div className="relative">
           <button
             onClick={() => setShowLangPicker(!showLangPicker)}
-            className="text-xs bg-white/20 px-3 py-1 rounded-full hover:bg-white/30 transition-colors flex items-center gap-1"
+            className={`text-xs px-3 py-1 rounded-full hover:bg-white/30 transition-colors flex items-center gap-1 ${isListening ? "bg-white/40 animate-pulse ring-2 ring-white" : "bg-white/20"}`}
           >
             🌐 {LANG_CODES[selectedLang]?.name || "English"} ▾
           </button>
@@ -336,6 +346,25 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+        {/* Language Selection — shown first before any conversation */}
+        {!langChosen && (
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+            <p className="text-sm text-gray-800 font-medium mb-1">Welcome to Sundari Silks!</p>
+            <p className="text-xs text-gray-500 mb-4">Choose your language to get started:</p>
+            <div className="grid grid-cols-3 gap-2">
+              {Object.entries(LANG_CODES).map(([code, lang]) => (
+                <button
+                  key={code}
+                  onClick={() => handleLangSelect(code)}
+                  className="text-xs px-2 py-2.5 rounded-lg border border-gray-200 hover:border-pink-400 hover:bg-pink-50 transition-all text-center"
+                >
+                  <span className="block text-base mb-0.5">{lang.greeting}</span>
+                  <span className="text-gray-500">{lang.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {messages.map((msg, i) => (
           <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
             <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
@@ -370,7 +399,7 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
       </div>
 
       {/* Quick Actions */}
-      {messages.length <= 2 && (
+      {langChosen && messages.length <= 2 && (
         <div className="px-4 py-2 flex gap-2 flex-wrap border-t border-gray-100 bg-white">
           {["Wedding Saree", "Daily Wear", "Under ₹5000", "Silk Sarees", "Show Bestsellers"].map((q) => (
             <button
@@ -419,11 +448,11 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             placeholder={`Type or speak in ${LANG_CODES[selectedLang]?.name}...`}
             className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
-            disabled={isLoading}
+            disabled={isLoading || !langChosen}
           />
           <button
             onClick={sendMessage}
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || !input.trim() || !langChosen}
             className="bg-pink-600 text-white rounded-full w-10 h-10 flex items-center justify-center hover:bg-pink-700 disabled:opacity-50 transition-colors"
           >
             ➤

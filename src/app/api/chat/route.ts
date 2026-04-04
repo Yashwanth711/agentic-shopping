@@ -165,26 +165,32 @@ export async function POST(req: NextRequest) {
     const deepseekKey = process.env.DEEPSEEK_API_KEY;
 
     const rawMsg = messages[messages.length - 1]?.content || "";
-    const detectedLang = detectLanguage(rawMsg) || language || "en";
-    const langName = LANG_NAMES[detectedLang] || "English";
+    const scriptLang = detectLanguage(rawMsg);
+    // If user selected a language in the picker, prefer that over script detection
+    // Script detection only overrides picker if the text is clearly in a different script
+    const detectedLang = scriptLang || language || "en";
+    // If picker is set to a non-English Indian language and script detection found a different
+    // Indian language, trust the picker (user may be typing transliterated text)
+    const finalLang = (language && language !== "en" && scriptLang && scriptLang !== language)
+      ? language  // Trust the picker
+      : detectedLang;
+    const langName = LANG_NAMES[finalLang] || "English";
 
     // Find relevant products based on user message
-    const relevantProducts = findRelevantProducts(rawMsg, detectedLang);
+    const relevantProducts = findRelevantProducts(rawMsg, finalLang);
     const productContext = formatProductsForPrompt(relevantProducts);
 
     // Route to provider
     if (provider === "deepseek" && deepseekKey) {
-      return await handleDeepSeek(messages, deepseekKey, detectedLang, langName, productContext, relevantProducts);
+      return await handleDeepSeek(messages, deepseekKey, finalLang, langName, productContext, relevantProducts);
     } else if (provider === "anthropic" && anthropicKey) {
-      return await handleAnthropic(messages, anthropicKey, detectedLang, langName, productContext, relevantProducts);
+      return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
     } else if (deepseekKey) {
-      // Fallback: try deepseek if available
-      return await handleDeepSeek(messages, deepseekKey, detectedLang, langName, productContext, relevantProducts);
+      return await handleDeepSeek(messages, deepseekKey, finalLang, langName, productContext, relevantProducts);
     } else if (anthropicKey) {
-      // Fallback: try anthropic if available
-      return await handleAnthropic(messages, anthropicKey, detectedLang, langName, productContext, relevantProducts);
+      return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
     } else {
-      return NextResponse.json(getDemoResponse(messages, detectedLang));
+      return NextResponse.json(getDemoResponse(messages, finalLang));
     }
   } catch (error) {
     console.error("Chat API error:", error);
@@ -205,13 +211,14 @@ async function handleAnthropic(
   relevantProducts: Product[],
 ) {
   const langInstruction = detectedLang !== "en"
-    ? `\n\nIMPORTANT: The customer is speaking in ${langName}. You MUST respond in ${langName}. Do NOT respond in English unless they switch to English.`
+    ? `\n\nCRITICAL LANGUAGE RULE: The customer is writing in ${langName} (language code: ${detectedLang}). You MUST respond ENTIRELY in ${langName} script. NOT Hindi, NOT English — only ${langName}. This is non-negotiable.`
     : "";
 
-  // Inject product context into the last user message
+  // Inject product context AND language reminder into the last user message
   const augmentedMessages = messages.map((m: { role: string; content: string }, i: number) => {
-    if (i === messages.length - 1 && m.role === "user" && productContext) {
-      return { role: m.role, content: m.content + productContext };
+    if (i === messages.length - 1 && m.role === "user") {
+      const langReminder = detectedLang !== "en" ? `\n[SYSTEM: Respond in ${langName} only]` : "";
+      return { role: m.role, content: m.content + (productContext || "") + langReminder };
     }
     return { role: m.role, content: m.content };
   });
