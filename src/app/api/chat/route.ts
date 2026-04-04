@@ -388,7 +388,15 @@ async function handleGemini(
     return NextResponse.json(getDemoResponse(messages, detectedLang));
   }
 
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  // Gemini 2.5 Flash may include "thought" parts — extract the actual text part
+  const parts = data.candidates?.[0]?.content?.parts || [];
+  const textPart = parts.find((p: { text?: string; thought?: boolean }) => !p.thought && p.text);
+  const text = textPart?.text || parts[parts.length - 1]?.text || "";
+
+  if (!text) {
+    console.error("Gemini returned empty response:", JSON.stringify(data).slice(0, 500));
+    return NextResponse.json(getDemoResponse(messages, detectedLang));
+  }
 
   return NextResponse.json({
     reply: text,
@@ -399,9 +407,9 @@ async function handleGemini(
 }
 
 function getDemoResponse(messages: { role: string; content: string }[], language: string): { reply: string; emotion: string; productsToShow: string[]; detectedLanguage?: string } {
-  const lastMsg = messages[messages.length - 1]?.content?.toLowerCase() || "";
   const rawMsg = messages[messages.length - 1]?.content || "";
-  const detectedLang = detectLanguage(rawMsg) || language || "en";
+  // Trust the passed language (from picker) — don't re-detect from script
+  const detectedLang = language || detectLanguage(rawMsg) || "en";
 
   // Find relevant products
   const relevant = findRelevantProducts(rawMsg, detectedLang);
