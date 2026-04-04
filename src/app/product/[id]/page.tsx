@@ -3,6 +3,7 @@ import { products } from "@/data/products";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
+import AgentPanel from "@/components/AgentPanel";
 
 export default function ProductPage() {
   const params = useParams();
@@ -26,7 +27,8 @@ export default function ProductPage() {
     .slice(0, 4);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50">
+      <div className="flex-1 overflow-y-auto">
       {/* Header */}
       <header className="bg-white shadow-sm border-b px-6 py-3">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
@@ -185,6 +187,11 @@ export default function ProductPage() {
           </div>
         )}
       </div>
+      </div>
+      {/* Agent Panel */}
+      <aside className="w-[25%] min-w-[320px] max-w-[400px] hidden md:block border-l border-gray-200">
+        <AgentPanel />
+      </aside>
     </div>
   );
 }
