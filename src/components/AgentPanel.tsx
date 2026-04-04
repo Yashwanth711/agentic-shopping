@@ -47,19 +47,46 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
   const detectedLang = detectDefaultLang();
   const greeting = LANG_CODES[detectedLang]?.greeting || "Namaste";
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Restore session from localStorage
+  const [messages, setMessages] = useState<Message[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const saved = localStorage.getItem("priya_messages");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [currentEmotion, setCurrentEmotion] = useState("greeting");
   const [isListening, setIsListening] = useState(false);
-  const [selectedLang, setSelectedLang] = useState(detectedLang);
+  const [selectedLang, setSelectedLang] = useState(() => {
+    if (typeof window === "undefined") return detectedLang;
+    return localStorage.getItem("priya_lang") || detectedLang;
+  });
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
-  const [langChosen, setLangChosen] = useState(false);
+  const [langChosen, setLangChosen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !!localStorage.getItem("priya_lang");
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Save messages to localStorage whenever they change
+  useEffect(() => {
+    if (messages.length > 0) {
+      localStorage.setItem("priya_messages", JSON.stringify(messages));
+    }
+  }, [messages]);
+
+  // Save language choice
+  useEffect(() => {
+    if (langChosen) {
+      localStorage.setItem("priya_lang", selectedLang);
+    }
+  }, [selectedLang, langChosen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
