@@ -191,20 +191,15 @@ export async function POST(req: NextRequest) {
     const relevantProducts = findRelevantProducts(rawMsg, finalLang);
     const productContext = formatProductsForPrompt(relevantProducts);
 
-    // Route to provider — gemini is free, use as default
+    // Route to selected provider, fallback to demo on any error
     if (provider === "gemini" && geminiKey) {
       return await handleGemini(messages, geminiKey, finalLang, langName, productContext, relevantProducts);
     } else if (provider === "anthropic" && anthropicKey) {
       return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
     } else if (provider === "deepseek" && deepseekKey) {
       return await handleDeepSeek(messages, deepseekKey, finalLang, langName, productContext, relevantProducts);
-    } else if (geminiKey) {
-      return await handleGemini(messages, geminiKey, finalLang, langName, productContext, relevantProducts);
-    } else if (anthropicKey) {
-      return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
-    } else {
-      return NextResponse.json(getDemoResponse(messages, finalLang));
     }
+    return NextResponse.json(getDemoResponse(messages, finalLang));
   } catch (error) {
     console.error("Chat API error:", error);
     return NextResponse.json({
@@ -254,11 +249,7 @@ async function handleAnthropic(
   const data = await response.json();
   if (data.error) {
     console.error("Anthropic API error:", JSON.stringify(data.error));
-    // Fall back to demo response on API error
-    return NextResponse.json(getDemoResponse(
-      messages,
-      detectedLang,
-    ));
+    return NextResponse.json(getDemoResponse(messages, detectedLang));
   }
 
   const text = data.content?.[0]?.text || "";
@@ -379,7 +370,7 @@ async function handleGemini(
   });
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
