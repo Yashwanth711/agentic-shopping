@@ -203,15 +203,28 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
   }, []);
 
   // Handle language selection from the initial prompt
+  const LANG_GREETINGS: Record<string, string> = {
+    en: "Hello! I'm Priya, your personal shopping assistant at Sundari Silks.\n\nWhat are you looking for today — a wedding saree, daily wear, or something for a festival?",
+    hi: "नमस्ते! मैं प्रिया हूँ, सुंदरी सिल्क्स में आपकी शॉपिंग असिस्टेंट।\n\nआज आप क्या ढूंढ रहे हैं — शादी की साड़ी, रोज़ की पहनावट, या त्योहार के लिए कुछ?",
+    te: "నమస్కారం! నేను ప్రియ, సుందరీ సిల్క్స్ లో మీ షాపింగ్ అసిస్టెంట్.\n\nమీరు ఈరోజు ఏమి వెతుకుతున్నారు — పెళ్లి చీర, రోజువారీ దుస్తులు, లేదా పండగ కోసం?",
+    ta: "வணக்கம்! நான் பிரியா, சுந்தரி சில்க்ஸ் கடையில் உங்கள் ஷாப்பிங் உதவியாளர்.\n\nஇன்று என்ன தேடுகிறீர்கள் — திருமண சேலை, தினசரி உடை, அல்லது பண்டிகைக்கா?",
+    kn: "ನಮಸ್ಕಾರ! ನಾನು ಪ್ರಿಯಾ, ಸುಂದರಿ ಸಿಲ್ಕ್ಸ್ ನಲ್ಲಿ ನಿಮ್ಮ ಶಾಪಿಂಗ್ ಅಸಿಸ್ಟೆಂಟ್.\n\nಇಂದು ಏನು ಹುಡುಕುತ್ತಿದ್ದೀರಿ — ಮದುವೆ ಸೀರೆ, ದೈನಂದಿನ ಉಡುಗೆ, ಅಥವಾ ಹಬ್ಬಕ್ಕಾಗಿ?",
+    ml: "നമസ്കാരം! ഞാൻ പ്രിയ, സുന്ദരി സിൽക്സിലെ നിങ്ങളുടെ ഷോപ്പിംഗ് അസിസ്റ്റന്റ്.\n\nഇന്ന് എന്താണ് തേടുന്നത് — വിവാഹ സാരി, ദൈനംദിന വസ്ത്രം, അല്ലെങ്കിൽ ആഘോഷത്തിന്?",
+    bn: "নমস্কার! আমি প্রিয়া, সুন্দরী সিল্কসে আপনার শপিং অ্যাসিস্ট্যান্ট।\n\nআজ কী খুঁজছেন — বিয়ের শাড়ি, দৈনন্দিন পোশাক, না উৎসবের জন্য?",
+    mr: "नमस्कार! मी प्रिया, सुंदरी सिल्क्स मधील तुमची शॉपिंग असिस्टंट.\n\nआज काय शोधत आहात — लग्नाची साडी, रोजची पोशाख, किंवा सणासाठी?",
+    gu: "નમસ્તે! હું પ્રિયા, સુંદરી સિલ્ક્સમાં તમારી શોપિંગ આસિસ્ટન્ટ.\n\nઆજે શું શોધો છો — લગ્નની સાડી, રોજની પોશાક, કે તહેવાર માટે?",
+    pa: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ! ਮੈਂ ਪ੍ਰਿਆ ਹਾਂ, ਸੁੰਦਰੀ ਸਿਲਕਸ ਵਿੱਚ ਤੁਹਾਡੀ ਸ਼ਾਪਿੰਗ ਅਸਿਸਟੈਂਟ।\n\nਅੱਜ ਕੀ ਲੱਭ ਰਹੇ ਹੋ — ਵਿਆਹ ਦੀ ਸਾੜੀ, ਰੋਜ਼ਾਨਾ ਪਹਿਰਾਵਾ, ਜਾਂ ਤਿਉਹਾਰ ਲਈ?",
+    or: "ନମସ୍କାର! ମୁଁ ପ୍ରିୟା, ସୁନ୍ଦରୀ ସିଲ୍କସରେ ଆପଣଙ୍କ ଶପିଂ ଆସିଷ୍ଟାଣ୍ଟ।\n\nଆଜି କଣ ଖୋଜୁଛନ୍ତି — ବିବାହ ଶାଢ଼ୀ, ଦୈନନ୍ଦିନ ପୋଷାକ, କି ପର୍ବ ପାଇଁ?",
+    ur: "آداب! میں پریا ہوں، سندری سلکس میں آپ کی شاپنگ اسسٹنٹ۔\n\nآج کیا ڈھونڈ رہے ہیں — شادی کی ساڑی، روزمرہ لباس، یا تہوار کے لیے؟",
+  };
+
   const handleLangSelect = useCallback((lang: string) => {
     setSelectedLang(lang);
     setLangChosen(true);
-    const langGreeting = LANG_CODES[lang]?.greeting || "Hello";
-    const langName = LANG_CODES[lang]?.name || "English";
     setMessages([
       {
         role: "assistant",
-        content: `${langGreeting}! I'm Priya, your personal shopping assistant at Sundari Silks.\n\nI'll help you in ${langName}. What are you looking for today — a wedding saree, daily wear, or something for a festival?`,
+        content: LANG_GREETINGS[lang] || LANG_GREETINGS.en,
         emotion: "greeting",
       },
     ]);
