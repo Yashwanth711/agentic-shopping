@@ -56,7 +56,7 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true);
   const [currentEmotion, setCurrentEmotion] = useState("greeting");
   const [isListening, setIsListening] = useState(false);
   const [selectedLang, setSelectedLang] = useState(detectedLang);
@@ -69,6 +69,22 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Stop voice when user switches tab or minimizes window
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+        if (isListening && recognitionRef.current) {
+          recognitionRef.current.stop();
+          setIsListening(false);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [isListening]);
 
   // Initialize Speech Recognition
   useEffect(() => {
