@@ -161,7 +161,7 @@ function findRelevantProducts(message: string, lang: string): Product[] {
 function formatProductsForPrompt(prods: Product[]): string {
   if (prods.length === 0) return "";
   return `\n\nMATCHING PRODUCTS FROM OUR INVENTORY (use these exact details):\n${prods.map((p, i) =>
-    `${i + 1}. [ID: ${p.id}] ${p.name} — ₹${p.price.toLocaleString()} (MRP ₹${p.mrp.toLocaleString()}, ${p.discount}% off)\n   Color: ${p.color} | Fabric: ${p.fabric} | Style: ${p.tags[0]} | Rating: ★${p.rating} (${p.reviewCount} reviews)\n   Occasions: ${p.occasion.join(", ")} | Stock: ${p.inventory > 0 ? p.inventory + " left" : "Out of stock"}\n   Top review: "${p.reviews[0]?.text || "No reviews yet"}"`
+    `${i + 1}. ${p.name} — ₹${p.price.toLocaleString()} (${p.discount}% off) | ${p.color} | ${p.fabric} | ★${p.rating} (${p.reviewCount} reviews) | ${p.inventory > 0 ? p.inventory + " left" : "Out of stock"}`
   ).join("\n")}`;
 }
 
