@@ -383,6 +383,7 @@ async function handleGemini(
   );
 
   const data = await response.json();
+  console.log("Gemini raw response:", JSON.stringify(data).slice(0, 1000));
   if (data.error) {
     console.error("Gemini API error:", JSON.stringify(data.error));
     return NextResponse.json(getDemoResponse(messages, detectedLang));
