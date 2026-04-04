@@ -54,10 +54,12 @@ export default function Home() {
     return result;
   }, [filters]);
 
+  // Agent-recommended product IDs — when set, grid shows only these
+  const [agentProductIds, setAgentProductIds] = useState<string[]>([]);
+
   // When agent recommends products, show those instead of filtered results
   const agentFilteredProducts = useMemo(() => {
     if (agentProductIds.length === 0) return null;
-    // Preserve the order the agent recommended
     return agentProductIds
       .map(id => products.find(p => p.id === id))
       .filter((p): p is typeof products[number] => !!p);
@@ -69,9 +71,6 @@ export default function Home() {
   // Bestsellers & New Arrivals for homepage
   const bestsellers = useMemo(() => products.filter(p => p.tags.includes("Bestseller")).slice(0, 8), []);
   const showHomepage = !filters.category && !filters.subcategory && !filters.search;
-
-  // Agent-recommended product IDs — when set, grid shows only these
-  const [agentProductIds, setAgentProductIds] = useState<string[]>([]);
 
   // Agent navigation handler — filters grid to show recommended products
   const handleAgentNavigate = (productIds: string | string[]) => {
