@@ -54,6 +54,15 @@ export default function Home() {
     return result;
   }, [filters]);
 
+  // When agent recommends products, show those instead of filtered results
+  const agentFilteredProducts = useMemo(() => {
+    if (agentProductIds.length === 0) return null;
+    // Preserve the order the agent recommended
+    return agentProductIds
+      .map(id => products.find(p => p.id === id))
+      .filter((p): p is typeof products[number] => !!p);
+  }, [agentProductIds]);
+
   const paginatedProducts = filtered.slice(0, page * ITEMS_PER_PAGE);
   const hasMore = paginatedProducts.length < filtered.length;
 
@@ -61,15 +70,21 @@ export default function Home() {
   const bestsellers = useMemo(() => products.filter(p => p.tags.includes("Bestseller")).slice(0, 8), []);
   const showHomepage = !filters.category && !filters.subcategory && !filters.search;
 
-  // Agent navigation handler
-  const handleAgentNavigate = (productId: string) => {
-    const el = document.getElementById(`product-${productId}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add("ring-4", "ring-pink-400", "ring-opacity-75");
-      setTimeout(() => el.classList.remove("ring-4", "ring-pink-400", "ring-opacity-75"), 3000);
+  // Agent-recommended product IDs — when set, grid shows only these
+  const [agentProductIds, setAgentProductIds] = useState<string[]>([]);
+
+  // Agent navigation handler — filters grid to show recommended products
+  const handleAgentNavigate = (productIds: string | string[]) => {
+    const ids = Array.isArray(productIds) ? productIds : [productIds];
+    if (ids.length > 0) {
+      setAgentProductIds(ids);
+      // Scroll to top of product grid
+      productGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   };
+
+  // Clear agent filter
+  const clearAgentFilter = () => setAgentProductIds([]);
 
   const categoryIcons: Record<string, string> = {
     "Sarees": "👗", "Kurtis": "👚", "Lehengas": "💃", "Jewelry": "💍", "Dupattas": "🧣", "Blouse Pieces": "✂️",
@@ -91,7 +106,7 @@ export default function Home() {
                 <input
                   type="text"
                   value={filters.search}
-                  onChange={(e) => setFilters(f => ({ ...f, search: e.target.value, category: "", subcategory: "" }))}
+                  onChange={(e) => { setFilters(f => ({ ...f, search: e.target.value, category: "", subcategory: "" })); clearAgentFilter(); }}
                   placeholder="Search sarees, kurtis, lehengas, jewelry..."
                   className="w-full border border-gray-300 rounded-full px-5 py-2 pl-10 text-sm focus:outline-none focus:border-pink-500 focus:ring-1 focus:ring-pink-500"
                 />
@@ -111,7 +126,7 @@ export default function Home() {
           {/* Category Navigation */}
           <div className="px-4 lg:px-6 py-2 flex gap-1 overflow-x-auto border-t border-gray-100 bg-gray-50/50">
             <button
-              onClick={() => { setFilters(f => ({ ...f, category: "", subcategory: "" })); setPage(1); }}
+              onClick={() => { setFilters(f => ({ ...f, category: "", subcategory: "" })); setPage(1); clearAgentFilter(); }}
               className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition-all ${
                 !filters.category ? "bg-pink-600 text-white shadow-sm" : "bg-white text-gray-700 hover:bg-pink-50 border border-gray-200"
               }`}
@@ -121,7 +136,7 @@ export default function Home() {
             {allCategories.map((c) => (
               <button
                 key={c}
-                onClick={() => { setFilters(f => ({ ...f, category: c, subcategory: "" })); setPage(1); }}
+                onClick={() => { setFilters(f => ({ ...f, category: c, subcategory: "" })); setPage(1); clearAgentFilter(); }}
                 className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition-all flex items-center gap-1 ${
                   filters.category === c ? "bg-pink-600 text-white shadow-sm" : "bg-white text-gray-700 hover:bg-pink-50 border border-gray-200"
                 }`}
@@ -288,9 +303,31 @@ export default function Home() {
               </div>
             )}
 
+            {/* Agent Recommendation Banner */}
+            {agentFilteredProducts && agentFilteredProducts.length > 0 && (
+              <div className="bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 rounded-xl p-4 mb-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🙏</span>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Priya&apos;s Picks for You</p>
+                    <p className="text-xs text-gray-500">{agentFilteredProducts.length} products recommended based on your conversation</p>
+                  </div>
+                </div>
+                <button
+                  onClick={clearAgentFilter}
+                  className="text-sm text-pink-600 hover:text-pink-700 font-medium px-3 py-1.5 rounded-full border border-pink-200 hover:bg-pink-50 transition-colors"
+                >
+                  Show All Products
+                </button>
+              </div>
+            )}
+
             {/* Product Grid */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 lg:gap-4">
-              {(showHomepage ? products.slice(0, 40) : paginatedProducts).map((p) => (
+              {(agentFilteredProducts && agentFilteredProducts.length > 0
+                ? agentFilteredProducts
+                : showHomepage ? products.slice(0, 40) : paginatedProducts
+              ).map((p) => (
                 <div key={p.id} id={`product-${p.id}`} className="transition-all duration-300 rounded-lg">
                   <ProductCard product={p} />
                 </div>
@@ -298,7 +335,7 @@ export default function Home() {
             </div>
 
             {/* Load More */}
-            {!showHomepage && hasMore && (
+            {!showHomepage && !agentFilteredProducts && hasMore && (
               <div className="text-center py-8">
                 <button
                   onClick={() => setPage(p => p + 1)}
