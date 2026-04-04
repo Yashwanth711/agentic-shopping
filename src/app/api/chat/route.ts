@@ -224,7 +224,7 @@ async function handleAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-3-haiku-20240307",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
       system: SYSTEM_PROMPT + langInstruction,
       messages: augmentedMessages,
@@ -251,7 +251,7 @@ async function handleAnthropic(
       const parsed = JSON.parse(jsonMatch[0]);
       // If Claude didn't provide productsToShow, use our search results
       if (!parsed.productsToShow?.length && relevantProducts.length > 0) {
-        parsed.productsToShow = relevantProducts.slice(0, 3).map((p: Product) => p.id);
+        parsed.productsToShow = relevantProducts.slice(0, 6).map((p: Product) => p.id);
       }
       return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
     }
@@ -260,7 +260,7 @@ async function handleAnthropic(
   return NextResponse.json({
     reply: text,
     emotion: "happy",
-    productsToShow: relevantProducts.slice(0, 3).map(p => p.id),
+    productsToShow: relevantProducts.slice(0, 6).map(p => p.id),
     detectedLanguage: detectedLang,
   });
 }
@@ -320,7 +320,7 @@ async function handleDeepSeek(
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       if (!parsed.productsToShow?.length && relevantProducts.length > 0) {
-        parsed.productsToShow = relevantProducts.slice(0, 3).map((p: Product) => p.id);
+        parsed.productsToShow = relevantProducts.slice(0, 6).map((p: Product) => p.id);
       }
       return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
     }
@@ -329,7 +329,7 @@ async function handleDeepSeek(
   return NextResponse.json({
     reply: text,
     emotion: "happy",
-    productsToShow: relevantProducts.slice(0, 3).map(p => p.id),
+    productsToShow: relevantProducts.slice(0, 6).map(p => p.id),
     detectedLanguage: detectedLang,
   });
 }
