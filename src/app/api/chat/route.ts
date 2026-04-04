@@ -187,8 +187,13 @@ export async function POST(req: NextRequest) {
       : detectedLang;
     const langName = LANG_NAMES[finalLang] || "English";
 
-    // Find relevant products based on user message
-    const relevantProducts = findRelevantProducts(rawMsg, finalLang);
+    // Find relevant products — use last 3 user messages for context
+    const recentUserMsgs = messages
+      .filter((m: { role: string }) => m.role === "user")
+      .slice(-3)
+      .map((m: { content: string }) => m.content)
+      .join(" ");
+    const relevantProducts = findRelevantProducts(recentUserMsgs, finalLang);
     const productContext = formatProductsForPrompt(relevantProducts);
 
     // Route to selected provider, fallback to demo on any error
@@ -354,20 +359,25 @@ async function handleGemini(
   relevantProducts: Product[],
 ) {
   const langInstruction = detectedLang !== "en"
-    ? `\n\nCRITICAL: Respond ENTIRELY in ${langName}. NOT English, NOT Hindi — only ${langName}.`
+    ? ` CRITICAL: Respond ENTIRELY in ${langName}. NOT English, NOT Hindi — only ${langName}.`
     : "";
 
-  // Gemini uses a different message format
-  const systemInstruction = SYSTEM_PROMPT + langInstruction;
-  const geminiMessages = messages.map((m: { role: string; content: string }, i: number) => {
+  // Build Gemini messages — system prompt as first user turn, then conversation
+  const geminiContents: { role: string; parts: { text: string }[] }[] = [
+    { role: "user", parts: [{ text: SYSTEM_PROMPT + langInstruction + "\n\nAcknowledge with a brief OK." }] },
+    { role: "model", parts: [{ text: "OK, I understand. I am Priya, ready to help." }] },
+  ];
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
     const role = m.role === "assistant" ? "model" : "user";
     let text = m.content;
     if (i === messages.length - 1 && m.role === "user") {
       text += (productContext || "");
       if (detectedLang !== "en") text += `\n[Respond in ${langName} only]`;
     }
-    return { role, parts: [{ text }] };
-  });
+    geminiContents.push({ role, parts: [{ text }] });
+  }
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
@@ -375,15 +385,13 @@ async function handleGemini(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents: geminiMessages,
-        generationConfig: { maxOutputTokens: 300 },
+        contents: geminiContents,
+        generationConfig: { maxOutputTokens: 2000, thinkingConfig: { thinkingBudget: 0 } },
       }),
     }
   );
 
   const data = await response.json();
-  console.log("Gemini raw response:", JSON.stringify(data).slice(0, 1000));
   if (data.error) {
     console.error("Gemini API error:", JSON.stringify(data.error));
     return NextResponse.json(getDemoResponse(messages, detectedLang));
@@ -392,7 +400,9 @@ async function handleGemini(
   // Gemini 2.5 Flash may include "thought" parts — extract the actual text part
   const parts = data.candidates?.[0]?.content?.parts || [];
   const textPart = parts.find((p: { text?: string; thought?: boolean }) => !p.thought && p.text);
-  const text = textPart?.text || parts[parts.length - 1]?.text || "";
+  let text = (textPart?.text || parts[parts.length - 1]?.text || "").trim();
+  // Remove "OK." or "OK," prefix from the response (artifact of system prompt injection)
+  text = text.replace(/^OK[.,!]?\s*/i, "").trim();
 
   if (!text) {
     console.error("Gemini returned empty response:", JSON.stringify(data).slice(0, 500));
