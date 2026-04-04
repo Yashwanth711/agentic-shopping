@@ -169,10 +169,11 @@ export async function POST(req: NextRequest) {
   try {
     const { messages, language } = await req.json();
 
-    // Flag-based provider: anthropic | deepseek | sarvam | demo
+    // Flag-based provider: gemini | anthropic | deepseek | demo
     const provider = process.env.AI_PROVIDER || "demo";
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
     const deepseekKey = process.env.DEEPSEEK_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
 
     const rawMsg = messages[messages.length - 1]?.content || "";
     const scriptLang = detectLanguage(rawMsg);
@@ -190,13 +191,15 @@ export async function POST(req: NextRequest) {
     const relevantProducts = findRelevantProducts(rawMsg, finalLang);
     const productContext = formatProductsForPrompt(relevantProducts);
 
-    // Route to provider
-    if (provider === "deepseek" && deepseekKey) {
-      return await handleDeepSeek(messages, deepseekKey, finalLang, langName, productContext, relevantProducts);
+    // Route to provider — gemini is free, use as default
+    if (provider === "gemini" && geminiKey) {
+      return await handleGemini(messages, geminiKey, finalLang, langName, productContext, relevantProducts);
     } else if (provider === "anthropic" && anthropicKey) {
       return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
-    } else if (deepseekKey) {
+    } else if (provider === "deepseek" && deepseekKey) {
       return await handleDeepSeek(messages, deepseekKey, finalLang, langName, productContext, relevantProducts);
+    } else if (geminiKey) {
+      return await handleGemini(messages, geminiKey, finalLang, langName, productContext, relevantProducts);
     } else if (anthropicKey) {
       return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
     } else {
@@ -345,6 +348,60 @@ async function handleDeepSeek(
   return NextResponse.json({
     reply,
     emotion,
+    productsToShow: relevantProducts.map(p => p.id),
+    detectedLanguage: detectedLang,
+  });
+}
+
+// Gemini handler — FREE tier (15 req/min)
+async function handleGemini(
+  messages: { role: string; content: string }[],
+  apiKey: string,
+  detectedLang: string,
+  langName: string,
+  productContext: string,
+  relevantProducts: Product[],
+) {
+  const langInstruction = detectedLang !== "en"
+    ? `\n\nCRITICAL: Respond ENTIRELY in ${langName}. NOT English, NOT Hindi — only ${langName}.`
+    : "";
+
+  // Gemini uses a different message format
+  const systemInstruction = SYSTEM_PROMPT + langInstruction;
+  const geminiMessages = messages.map((m: { role: string; content: string }, i: number) => {
+    const role = m.role === "assistant" ? "model" : "user";
+    let text = m.content;
+    if (i === messages.length - 1 && m.role === "user") {
+      text += (productContext || "");
+      if (detectedLang !== "en") text += `\n[Respond in ${langName} only]`;
+    }
+    return { role, parts: [{ text }] };
+  });
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: systemInstruction }] },
+        contents: geminiMessages,
+        generationConfig: { maxOutputTokens: 300 },
+      }),
+    }
+  );
+
+  const data = await response.json();
+  if (data.error) {
+    console.error("Gemini API error:", JSON.stringify(data.error));
+    return NextResponse.json(getDemoResponse(messages, detectedLang));
+  }
+
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  return NextResponse.json({
+    reply: text,
+    emotion: "happy",
     productsToShow: relevantProducts.map(p => p.id),
     detectedLanguage: detectedLang,
   });

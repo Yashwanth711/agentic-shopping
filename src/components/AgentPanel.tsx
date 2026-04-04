@@ -87,9 +87,11 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (SpeechRecognition) {
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
+        recognition.continuous = true;
         recognition.interimResults = true;
         recognition.maxAlternatives = 1;
+
+        let silenceTimer: ReturnType<typeof setTimeout> | null = null;
 
         recognition.onresult = (event: any) => {
           const transcript = Array.from(event.results)
@@ -97,18 +99,23 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
             .join("");
           setInput(transcript);
 
-          // If final result, auto-send
+          // Reset silence timer on every result — wait 3 seconds of silence before stopping
+          if (silenceTimer) clearTimeout(silenceTimer);
           if (event.results[event.results.length - 1].isFinal) {
-            setIsListening(false);
+            silenceTimer = setTimeout(() => {
+              recognition.stop();
+            }, 3000);
           }
         };
 
         recognition.onerror = (event: any) => {
           console.error("Speech recognition error:", event.error);
+          if (silenceTimer) clearTimeout(silenceTimer);
           setIsListening(false);
         };
 
         recognition.onend = () => {
+          if (silenceTimer) clearTimeout(silenceTimer);
           setIsListening(false);
         };
 
