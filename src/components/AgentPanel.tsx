@@ -47,46 +47,54 @@ export default function AgentPanel({ onNavigate }: { onNavigate?: (productId: st
   const detectedLang = detectDefaultLang();
   const greeting = LANG_CODES[detectedLang]?.greeting || "Namaste";
 
-  // Restore session from localStorage
-  const [messages, setMessages] = useState<Message[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const saved = localStorage.getItem("priya_messages");
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(true);
   const [currentEmotion, setCurrentEmotion] = useState("greeting");
   const [isListening, setIsListening] = useState(false);
-  const [selectedLang, setSelectedLang] = useState(() => {
-    if (typeof window === "undefined") return detectedLang;
-    return localStorage.getItem("priya_lang") || detectedLang;
-  });
+  const [selectedLang, setSelectedLang] = useState(detectedLang);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [showLangPicker, setShowLangPicker] = useState(false);
-  const [langChosen, setLangChosen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !!localStorage.getItem("priya_lang");
-  });
+  const [langChosen, setLangChosen] = useState(false);
+  const [restored, setRestored] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
 
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedMessages = localStorage.getItem("priya_messages");
+      const savedLang = localStorage.getItem("priya_lang");
+      if (savedMessages) {
+        const parsed = JSON.parse(savedMessages);
+        if (parsed.length > 0) {
+          setMessages(parsed);
+          setLangChosen(true);
+        }
+      }
+      if (savedLang) {
+        setSelectedLang(savedLang);
+        setLangChosen(true);
+      }
+    } catch { /* ignore */ }
+    setRestored(true);
+  }, []);
+
   // Save messages to localStorage whenever they change
   useEffect(() => {
-    if (messages.length > 0) {
+    if (restored && messages.length > 0) {
       localStorage.setItem("priya_messages", JSON.stringify(messages));
     }
-  }, [messages]);
+  }, [messages, restored]);
 
   // Save language choice
   useEffect(() => {
-    if (langChosen) {
+    if (restored && langChosen) {
       localStorage.setItem("priya_lang", selectedLang);
     }
-  }, [selectedLang, langChosen]);
+  }, [selectedLang, langChosen, restored]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
