@@ -34,7 +34,7 @@ RULES:
 
 When products are provided in the conversation, recommend from those SPECIFIC products using their real names, prices, and ratings.
 
-Respond with JSON: { "reply": "your message", "emotion": "greeting|excited|happy|thinking|empathetic|proud|patient|celebratory", "productsToShow": ["prod_0001"] }`;
+When recommending products, use the EXACT names and prices from the inventory provided. Keep responses concise (2-3 paragraphs max). Always end with a follow-up question.`;
 
 const LANG_NAMES: Record<string, string> = {
   hi: "Hindi", te: "Telugu", ta: "Tamil", kn: "Kannada", ml: "Malayalam",
@@ -244,23 +244,23 @@ async function handleAnthropic(
   const text = data.content?.[0]?.text || "";
 
   // Try to parse JSON response from Claude
+  let reply = text;
+  let emotion = "happy";
   try {
-    // Find JSON in the response (Claude sometimes wraps it in text)
     const jsonMatch = text.match(/\{[\s\S]*"reply"[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
-      // If Claude didn't provide productsToShow, use our search results
-      if (!parsed.productsToShow?.length && relevantProducts.length > 0) {
-        parsed.productsToShow = relevantProducts.slice(0, 6).map((p: Product) => p.id);
-      }
-      return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
+      reply = parsed.reply || text;
+      emotion = parsed.emotion || "happy";
     }
   } catch { /* JSON parse failed, use raw text */ }
 
+  // Always use our local search results for productsToShow — they match the products
+  // we injected into the prompt, so the grid stays in sync with the conversation
   return NextResponse.json({
-    reply: text,
-    emotion: "happy",
-    productsToShow: relevantProducts.slice(0, 6).map(p => p.id),
+    reply,
+    emotion,
+    productsToShow: relevantProducts.map(p => p.id),
     detectedLanguage: detectedLang,
   });
 }
@@ -314,22 +314,21 @@ async function handleDeepSeek(
 
   const text = data.choices?.[0]?.message?.content || "";
 
-  // Try to parse JSON response
+  let reply = text;
+  let emotion = "happy";
   try {
     const jsonMatch = text.match(/\{[\s\S]*"reply"[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
-      if (!parsed.productsToShow?.length && relevantProducts.length > 0) {
-        parsed.productsToShow = relevantProducts.slice(0, 6).map((p: Product) => p.id);
-      }
-      return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
+      reply = parsed.reply || text;
+      emotion = parsed.emotion || "happy";
     }
   } catch { /* JSON parse failed */ }
 
   return NextResponse.json({
-    reply: text,
-    emotion: "happy",
-    productsToShow: relevantProducts.slice(0, 6).map(p => p.id),
+    reply,
+    emotion,
+    productsToShow: relevantProducts.map(p => p.id),
     detectedLanguage: detectedLang,
   });
 }
