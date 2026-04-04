@@ -62,11 +62,11 @@ function findRelevantProducts(message: string, lang: string): Product[] {
 
   // Category keywords (English + Indian languages)
   const categoryMap: Record<string, string> = {
-    saree: "Sarees", sarees: "Sarees", "साड़ी": "Sarees", "సారీ": "Sarees", "சேலை": "Sarees",
-    kurti: "Kurtis", kurtis: "Kurtis", kurta: "Kurtis", "कुर्ती": "Kurtis",
-    jewelry: "Jewelry", jewellery: "Jewelry", "गहने": "Jewelry", "ज्वेलरी": "Jewelry",
-    kids: "Kids", children: "Kids", "बच्चे": "Kids",
-    men: "Men", shirt: "Men", shirts: "Men", "शर्ट": "Men",
+    saree: "Sarees", sarees: "Sarees", "साड़ी": "Sarees", "సారీ": "Sarees", "சேலை": "Sarees", "చీర": "Sarees", "పట్టు": "Sarees", "ಸೀರೆ": "Sarees", "സാരി": "Sarees", "শাড়ি": "Sarees",
+    kurti: "Kurtis", kurtis: "Kurtis", kurta: "Kurtis", "कुर्ती": "Kurtis", "కుర్తీ": "Kurtis", "குர்தா": "Kurtis",
+    jewelry: "Jewelry", jewellery: "Jewelry", "गहने": "Jewelry", "ज्वेलरी": "Jewelry", "నగలు": "Jewelry", "நகை": "Jewelry",
+    kids: "Kids", children: "Kids", "बच्चे": "Kids", "పిల్లలు": "Kids", "குழந்தை": "Kids",
+    men: "Men", shirt: "Men", shirts: "Men", "शर्ट": "Men", "షర్ట్": "Men",
   };
 
   // Occasion keywords
@@ -112,11 +112,20 @@ function findRelevantProducts(message: string, lang: string): Product[] {
     if (msg.includes(keyword)) { colorFilter = color; break; }
   }
 
-  // Extract price from message
-  const priceMatch = msg.match(/(?:under|below|less than|within|budget|₹|rs\.?|rupee)\s*(\d[\d,]*)/i)
-    || msg.match(/(\d[\d,]*)\s*(?:ke andar|tak|se kam|के अंदर|तक|से कम)/i);
-  if (priceMatch) {
-    maxPrice = parseInt(priceMatch[1].replace(/,/g, ""));
+  // Extract price from message — supports English, Hindi, Telugu, Tamil, and other Indian languages
+  let minPrice: number | null = null;
+  // Price range: "300 to 500", "300 se 500", "300 నుండి 500", "300 முதல் 500"
+  const rangeMatch = msg.match(/(\d[\d,]*)\s*(?:to|se|से|నుండి|முதல்|থেকে|ಇಂದ|മുതൽ|-)\s*(\d[\d,]*)/i);
+  if (rangeMatch) {
+    minPrice = parseInt(rangeMatch[1].replace(/,/g, ""));
+    maxPrice = parseInt(rangeMatch[2].replace(/,/g, ""));
+  } else {
+    // Single price: "under 5000", "₹500 లోపల", "500 के अंदर"
+    const priceMatch = msg.match(/(?:under|below|less than|within|budget|₹|rs\.?|rupee)\s*(\d[\d,]*)/i)
+      || msg.match(/(\d[\d,]*)\s*(?:ke andar|tak|se kam|के अंदर|तक|से कम|లోపల|లోపు|கீழ்|এর নিচে|ಒಳಗೆ|താഴെ)/i);
+    if (priceMatch) {
+      maxPrice = parseInt(priceMatch[1].replace(/,/g, ""));
+    }
   }
 
   // Filter products
@@ -125,6 +134,7 @@ function findRelevantProducts(message: string, lang: string): Product[] {
     if (occasionFilter && !p.occasion.includes(occasionFilter)) return false;
     if (fabricFilter && !p.fabric.toLowerCase().includes(fabricFilter.toLowerCase())) return false;
     if (colorFilter && p.color !== colorFilter) return false;
+    if (minPrice && p.price < minPrice) return false;
     if (maxPrice && p.price > maxPrice) return false;
     return true;
   });
