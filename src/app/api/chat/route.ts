@@ -159,8 +159,10 @@ export async function POST(req: NextRequest) {
   try {
     const { messages, language } = await req.json();
 
+    // Flag-based provider: anthropic | deepseek | sarvam | demo
     const provider = process.env.AI_PROVIDER || "demo";
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const deepseekKey = process.env.DEEPSEEK_API_KEY;
 
     const rawMsg = messages[messages.length - 1]?.content || "";
     const detectedLang = detectLanguage(rawMsg) || language || "en";
@@ -170,7 +172,16 @@ export async function POST(req: NextRequest) {
     const relevantProducts = findRelevantProducts(rawMsg, detectedLang);
     const productContext = formatProductsForPrompt(relevantProducts);
 
-    if ((provider === "anthropic" || !provider || provider === "demo") && anthropicKey) {
+    // Route to provider
+    if (provider === "deepseek" && deepseekKey) {
+      return await handleDeepSeek(messages, deepseekKey, detectedLang, langName, productContext, relevantProducts);
+    } else if (provider === "anthropic" && anthropicKey) {
+      return await handleAnthropic(messages, anthropicKey, detectedLang, langName, productContext, relevantProducts);
+    } else if (deepseekKey) {
+      // Fallback: try deepseek if available
+      return await handleDeepSeek(messages, deepseekKey, detectedLang, langName, productContext, relevantProducts);
+    } else if (anthropicKey) {
+      // Fallback: try anthropic if available
       return await handleAnthropic(messages, anthropicKey, detectedLang, langName, productContext, relevantProducts);
     } else {
       return NextResponse.json(getDemoResponse(messages, detectedLang));
@@ -245,6 +256,75 @@ async function handleAnthropic(
       return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
     }
   } catch { /* JSON parse failed, use raw text */ }
+
+  return NextResponse.json({
+    reply: text,
+    emotion: "happy",
+    productsToShow: relevantProducts.slice(0, 3).map(p => p.id),
+    detectedLanguage: detectedLang,
+  });
+}
+
+// DeepSeek / Agent Router handler (OpenAI-compatible API)
+async function handleDeepSeek(
+  messages: { role: string; content: string }[],
+  apiKey: string,
+  detectedLang: string,
+  langName: string,
+  productContext: string,
+  relevantProducts: Product[],
+) {
+  const langInstruction = detectedLang !== "en"
+    ? `\n\nIMPORTANT: The customer is speaking in ${langName}. You MUST respond in ${langName}. Do NOT respond in English unless they switch to English.`
+    : "";
+
+  // Inject product context into the last user message
+  const augmentedMessages = [
+    { role: "system", content: SYSTEM_PROMPT + langInstruction },
+    ...messages.map((m: { role: string; content: string }, i: number) => {
+      if (i === messages.length - 1 && m.role === "user" && productContext) {
+        return { role: m.role, content: m.content + productContext };
+      }
+      return { role: m.role, content: m.content };
+    }),
+  ];
+
+  // Agent Router API (OpenAI-compatible)
+  const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://router.agentrouter.org/v1";
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-v3.2";
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 500,
+      messages: augmentedMessages,
+    }),
+  });
+
+  const data = await response.json();
+  if (data.error) {
+    console.error("DeepSeek API error:", JSON.stringify(data.error));
+    return NextResponse.json(getDemoResponse(messages, detectedLang));
+  }
+
+  const text = data.choices?.[0]?.message?.content || "";
+
+  // Try to parse JSON response
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*"reply"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!parsed.productsToShow?.length && relevantProducts.length > 0) {
+        parsed.productsToShow = relevantProducts.slice(0, 3).map((p: Product) => p.id);
+      }
+      return NextResponse.json({ ...parsed, detectedLanguage: detectedLang });
+    }
+  } catch { /* JSON parse failed */ }
 
   return NextResponse.json({
     reply: text,
