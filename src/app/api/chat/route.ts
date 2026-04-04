@@ -1,40 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { products, Product } from "@/data/products";
 
-// Short system prompt — personality only (saves tokens)
-const SYSTEM_PROMPT = `You are Priya, a warm Indian shopping assistant at Sundari Silks — an online store selling sarees, kurtis, jewelry, kids clothing, and men's shirts.
+// Build compact product catalog for AI — one line per product, ~3KB total
+const PRODUCT_CATALOG = products.map(p =>
+  `${p.id}|${p.name}|${p.category}|₹${p.price}|${p.color}|${p.fabric}|${p.tags[0]}|★${p.rating}(${p.reviewCount})|${p.occasion.join("/")}|${p.inventory}left`
+).join("\n");
 
-PERSONALITY:
-- Warm, patient, honest — like a trusted family shopkeeper
-- Speak the customer's language (auto-detect and respond in same language)
-- Never lie about products, reviews, or stock
-- Understand Indian occasions, traditions, regional preferences
+const SYSTEM_PROMPT = `You are Priya, a warm Indian shopping assistant at Sundari Silks.
 
-CONVERSATION STYLE:
-- Ask about occasion, budget, preferences
-- Show 3-5 curated options (not everything)
-- Compare honestly — pros AND cons from reviews
-- Suggest complementary items when appropriate
-- Keep responses concise (2-3 short paragraphs)
+PERSONALITY: Warm, patient, honest — like a trusted Indian family shopkeeper. Speak the customer's language.
 
-REGIONAL KNOWLEDGE:
-- Tamil → Kanjivaram, Chettinad silk
-- Hindi → Banarasi, Chanderi
-- Bengali → Tant, Baluchari, Jamdani
-- Gujarati → Patola, Bandhani
-- Marathi → Paithani
-- Kannada → Mysore Silk
+PRODUCT CATALOG (${products.length} products):
+${PRODUCT_CATALOG}
 
-RULES:
-- NEVER fabricate reviews or ratings
-- NEVER create false urgency
-- ALWAYS be transparent about quality
-- When showing products, use the EXACT product data provided — don't make up names or prices
+HOW TO RECOMMEND:
+- Pick 3-5 BEST matching products from the catalog above based on what the customer asks
+- Use EXACT names, prices, ratings from the catalog — never make up products
+- Understand context: "blue" after "saree" means blue sarees, "kids" means switch to kids category
+- Be honest about stock and ratings
+- Keep responses concise (2-3 short paragraphs max)
+- Always end with a follow-up question
 - Respond in the customer's language
 
-When products are provided in the conversation, recommend from those SPECIFIC products using their real names, prices, and ratings.
-
-When recommending products, use the EXACT names and prices from the inventory provided. Keep responses concise (2-3 paragraphs max). Always end with a follow-up question.`;
+RESPOND WITH: Your natural conversational response mentioning products by their exact names with **bold** formatting.`;
 
 const LANG_NAMES: Record<string, string> = {
   hi: "Hindi", te: "Telugu", ta: "Tamil", kn: "Kannada", ml: "Malayalam",
@@ -65,7 +53,7 @@ function findRelevantProducts(message: string, lang: string): Product[] {
     saree: "Sarees", sarees: "Sarees", "साड़ी": "Sarees", "సారీ": "Sarees", "சேலை": "Sarees", "చీర": "Sarees", "పట్టు": "Sarees", "ಸೀರೆ": "Sarees", "സാരി": "Sarees", "শাড়ি": "Sarees",
     kurti: "Kurtis", kurtis: "Kurtis", kurta: "Kurtis", "कुर्ती": "Kurtis", "కుర్తీ": "Kurtis", "குர்தா": "Kurtis",
     jewelry: "Jewelry", jewellery: "Jewelry", "गहने": "Jewelry", "ज्वेलरी": "Jewelry", "నగలు": "Jewelry", "நகை": "Jewelry",
-    kids: "Kids", children: "Kids", "बच्चे": "Kids", "పిల్లలు": "Kids", "குழந்தை": "Kids",
+    kids: "Kids", children: "Kids", "बच्चे": "Kids", "పిల్లలు": "Kids", "குழந்தை": "Kids", pillala: "Kids", bacche: "Kids", bachche: "Kids",
     men: "Men", shirt: "Men", shirts: "Men", "शर्ट": "Men", "షర్ట్": "Men",
   };
 
@@ -159,10 +147,28 @@ function findRelevantProducts(message: string, lang: string): Product[] {
 
 // Format products for the AI prompt
 function formatProductsForPrompt(prods: Product[]): string {
-  if (prods.length === 0) return "";
-  return `\n\nMATCHING PRODUCTS FROM OUR INVENTORY (use these exact details):\n${prods.map((p, i) =>
+  // Always tell AI about total inventory
+  const categoryCounts = products.reduce((acc, p) => {
+    acc[p.category] = (acc[p.category] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const inventory = `\n\nOUR STORE INVENTORY: ${Object.entries(categoryCounts).map(([c, n]) => `${c}: ${n} items`).join(", ")}. Total: ${products.length} products.`;
+
+  if (prods.length === 0) return inventory + "\nNo specific matches found for this query — ask the customer to clarify.";
+  return inventory + `\n\nTOP MATCHES (showing ${prods.length} of ${products.filter(p => p.category === prods[0].category).length} in this category):\n${prods.map((p, i) =>
     `${i + 1}. ${p.name} — ₹${p.price.toLocaleString()} (${p.discount}% off) | ${p.color} | ${p.fabric} | ★${p.rating} (${p.reviewCount} reviews) | ${p.inventory > 0 ? p.inventory + " left" : "Out of stock"}`
   ).join("\n")}`;
+}
+
+// Extract product IDs from AI response by matching product names
+function extractProductIds(text: string): string[] {
+  const ids: string[] = [];
+  for (const p of products) {
+    if (text.includes(p.name) || text.includes(p.id)) {
+      ids.push(p.id);
+    }
+  }
+  return ids.slice(0, 8);
 }
 
 export async function POST(req: NextRequest) {
@@ -187,22 +193,13 @@ export async function POST(req: NextRequest) {
       : detectedLang;
     const langName = LANG_NAMES[finalLang] || "English";
 
-    // Find relevant products — use last 3 user messages for context
-    const recentUserMsgs = messages
-      .filter((m: { role: string }) => m.role === "user")
-      .slice(-3)
-      .map((m: { content: string }) => m.content)
-      .join(" ");
-    const relevantProducts = findRelevantProducts(recentUserMsgs, finalLang);
-    const productContext = formatProductsForPrompt(relevantProducts);
-
     // Route to selected provider, fallback to demo on any error
     if (provider === "gemini" && geminiKey) {
-      return await handleGemini(messages, geminiKey, finalLang, langName, productContext, relevantProducts);
+      return await handleGemini(messages, geminiKey, finalLang, langName);
     } else if (provider === "anthropic" && anthropicKey) {
-      return await handleAnthropic(messages, anthropicKey, finalLang, langName, productContext, relevantProducts);
+      return await handleAnthropic(messages, anthropicKey, finalLang, langName);
     } else if (provider === "deepseek" && deepseekKey) {
-      return await handleDeepSeek(messages, deepseekKey, finalLang, langName, productContext, relevantProducts);
+      return await handleDeepSeek(messages, deepseekKey, finalLang, langName);
     }
     return NextResponse.json(getDemoResponse(messages, finalLang));
   } catch (error) {
@@ -220,18 +217,14 @@ async function handleAnthropic(
   apiKey: string,
   detectedLang: string,
   langName: string,
-  productContext: string,
-  relevantProducts: Product[],
 ) {
   const langInstruction = detectedLang !== "en"
-    ? `\n\nCRITICAL LANGUAGE RULE: The customer is writing in ${langName} (language code: ${detectedLang}). You MUST respond ENTIRELY in ${langName} script. NOT Hindi, NOT English — only ${langName}. This is non-negotiable.`
+    ? `\n\nCRITICAL: Respond ENTIRELY in ${langName}. NOT Hindi, NOT English — only ${langName}.`
     : "";
 
-  // Inject product context AND language reminder into the last user message
   const augmentedMessages = messages.map((m: { role: string; content: string }, i: number) => {
-    if (i === messages.length - 1 && m.role === "user") {
-      const langReminder = detectedLang !== "en" ? `\n[SYSTEM: Respond in ${langName} only]` : "";
-      return { role: m.role, content: m.content + (productContext || "") + langReminder };
+    if (i === messages.length - 1 && m.role === "user" && detectedLang !== "en") {
+      return { role: m.role, content: m.content + `\n[Respond in ${langName} only]` };
     }
     return { role: m.role, content: m.content };
   });
@@ -271,12 +264,10 @@ async function handleAnthropic(
     }
   } catch { /* JSON parse failed, use raw text */ }
 
-  // Always use our local search results for productsToShow — they match the products
-  // we injected into the prompt, so the grid stays in sync with the conversation
   return NextResponse.json({
     reply,
     emotion,
-    productsToShow: relevantProducts.map(p => p.id),
+    productsToShow: extractProductIds(reply),
     detectedLanguage: detectedLang,
   });
 }
@@ -287,22 +278,16 @@ async function handleDeepSeek(
   apiKey: string,
   detectedLang: string,
   langName: string,
-  productContext: string,
-  relevantProducts: Product[],
 ) {
   const langInstruction = detectedLang !== "en"
-    ? `\n\nIMPORTANT: The customer is speaking in ${langName}. You MUST respond in ${langName}. Do NOT respond in English unless they switch to English.`
+    ? `\n\nCRITICAL: Respond ENTIRELY in ${langName}.`
     : "";
 
-  // Inject product context into the last user message
   const augmentedMessages = [
     { role: "system", content: SYSTEM_PROMPT + langInstruction },
-    ...messages.map((m: { role: string; content: string }, i: number) => {
-      if (i === messages.length - 1 && m.role === "user" && productContext) {
-        return { role: m.role, content: m.content + productContext };
-      }
-      return { role: m.role, content: m.content };
-    }),
+    ...messages.map((m: { role: string; content: string }) => ({
+      role: m.role, content: m.content,
+    })),
   ];
 
   // Agent Router API (OpenAI-compatible)
@@ -344,7 +329,7 @@ async function handleDeepSeek(
   return NextResponse.json({
     reply,
     emotion,
-    productsToShow: relevantProducts.map(p => p.id),
+    productsToShow: extractProductIds(reply),
     detectedLanguage: detectedLang,
   });
 }
@@ -355,8 +340,6 @@ async function handleGemini(
   apiKey: string,
   detectedLang: string,
   langName: string,
-  productContext: string,
-  relevantProducts: Product[],
 ) {
   const langInstruction = detectedLang !== "en"
     ? ` CRITICAL: Respond ENTIRELY in ${langName}. NOT English, NOT Hindi — only ${langName}.`
@@ -364,17 +347,16 @@ async function handleGemini(
 
   // Build Gemini messages — system prompt as first user turn, then conversation
   const geminiContents: { role: string; parts: { text: string }[] }[] = [
-    { role: "user", parts: [{ text: SYSTEM_PROMPT + langInstruction + "\n\nAcknowledge with a brief OK." }] },
-    { role: "model", parts: [{ text: "OK, I understand. I am Priya, ready to help." }] },
+    { role: "user", parts: [{ text: SYSTEM_PROMPT + langInstruction + "\n\nAcknowledge briefly." }] },
+    { role: "model", parts: [{ text: "Ready to help!" }] },
   ];
 
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     const role = m.role === "assistant" ? "model" : "user";
     let text = m.content;
-    if (i === messages.length - 1 && m.role === "user") {
-      text += (productContext || "");
-      if (detectedLang !== "en") text += `\n[Respond in ${langName} only]`;
+    if (i === messages.length - 1 && m.role === "user" && detectedLang !== "en") {
+      text += `\n[Respond in ${langName} only]`;
     }
     geminiContents.push({ role, parts: [{ text }] });
   }
@@ -412,7 +394,7 @@ async function handleGemini(
   return NextResponse.json({
     reply: text,
     emotion: "happy",
-    productsToShow: relevantProducts.map(p => p.id),
+    productsToShow: extractProductIds(text),
     detectedLanguage: detectedLang,
   });
 }
