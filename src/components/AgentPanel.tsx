@@ -82,6 +82,7 @@ export default function AgentPanel({ onNavigate, context }: {
   const [showLangPicker, setShowLangPicker] = useState(false);
   const [langChosen, setLangChosen] = useState(false);
   const [restored, setRestored] = useState(false);
+  const [feedback, setFeedback] = useState<Record<number, "up" | "down">>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -319,6 +320,26 @@ export default function AgentPanel({ onNavigate, context }: {
     }
   };
 
+  // Log feedback to Google Sheet
+  const logFeedback = (msgIndex: number, rating: "up" | "down") => {
+    setFeedback(prev => ({ ...prev, [msgIndex]: rating }));
+    const msg = messages[msgIndex];
+    if (!msg) return;
+    // Find the user message before this assistant message
+    const userMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === "user");
+    fetch("https://script.google.com/macros/s/AKfycbxd1mug0pGQJeeoNtrD_MIBE3x4oA3Gk4C2l9neZvfbC7yzaaKHesNZt-6-hKgYoHn2Cw/exec", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionIdRef.current,
+        role: "feedback",
+        message: `${rating === "up" ? "LIKED" : "DISLIKED"} | User asked: "${userMsg?.content || ""}" | Saheli replied: "${msg.content.slice(0, 200)}"`,
+        language: selectedLang,
+        page: "feedback",
+      }),
+    }).catch(() => {});
+  };
+
   const clearChat = () => {
     setMessages([]);
     setLangChosen(false);
@@ -419,10 +440,31 @@ export default function AgentPanel({ onNavigate, context }: {
                 {msg.role === "assistant" ? <RenderMessage text={msg.content} /> : msg.content}
               </p>
               {msg.role === "assistant" && (
-                <button onClick={() => speakText(msg.content, msg.language || selectedLang)}
-                  className="text-xs text-gray-500 hover:text-amber-400 mt-2 flex items-center gap-1">
-                  🔊 Listen
-                </button>
+                <div className="flex items-center gap-3 mt-2">
+                  <button onClick={() => speakText(msg.content, msg.language || selectedLang)}
+                    className="text-xs text-gray-500 hover:text-amber-400 flex items-center gap-1">
+                    🔊 Listen
+                  </button>
+                  {/* Feedback buttons — subtle, non-intrusive */}
+                  {!feedback[i] ? (
+                    <div className="flex items-center gap-1 ml-auto">
+                      <button onClick={() => logFeedback(i, "up")}
+                        className="text-gray-600 hover:text-green-400 transition-colors p-1 rounded hover:bg-green-400/10"
+                        title="Helpful">
+                        <span className="text-xs">👍</span>
+                      </button>
+                      <button onClick={() => logFeedback(i, "down")}
+                        className="text-gray-600 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-400/10"
+                        title="Not helpful">
+                        <span className="text-xs">👎</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-600 ml-auto">
+                      {feedback[i] === "up" ? "👍 Thanks!" : "👎 Noted"}
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           </div>
