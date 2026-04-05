@@ -152,14 +152,19 @@ export default function AgentPanel({ onNavigate, context }: {
         stopTimer = setTimeout(() => { try { rec.stop(); } catch {} }, 3000);
       }
     };
-    rec.onerror = () => { if (stopTimer) clearTimeout(stopTimer); setIsListening(false); };
+    rec.onerror = (e: any) => {
+      if (stopTimer) clearTimeout(stopTimer);
+      // Don't flash on "no-speech" or "aborted" errors — these are normal
+      if (e.error !== "no-speech" && e.error !== "aborted") console.error("Speech error:", e.error);
+      setIsListening(false);
+    };
     rec.onend = () => {
       if (stopTimer) clearTimeout(stopTimer);
       setIsListening(false); setMicReady(false);
-      // Auto-send if we got a transcript — works in both voice and chat mode
-      if (lastTranscriptRef.current.trim()) {
-        // Use a custom event so sendMessage can be called regardless of mode
-        window.dispatchEvent(new CustomEvent("saheli-voice-done"));
+      // Only auto-send if we actually got a real transcript
+      const transcript = lastTranscriptRef.current.trim();
+      if (transcript && transcript.length > 0) {
+        setTimeout(() => window.dispatchEvent(new CustomEvent("saheli-voice-done")), 150);
       }
     };
     recognitionRef.current = rec;
@@ -175,7 +180,13 @@ export default function AgentPanel({ onNavigate, context }: {
       if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
       setInput(""); lastTranscriptRef.current = ""; setMicReady(false);
       recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
-      recognitionRef.current.start(); setIsListening(true);
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        // Already started or browser blocked — ignore silently
+        console.warn("Mic start failed:", e);
+      }
     }
   }, [isListening, selectedLang, isSpeaking]);
 
@@ -225,8 +236,9 @@ export default function AgentPanel({ onNavigate, context }: {
       const aMsg: Message = { role: "assistant", content: data.reply, emotion: data.emotion || "happy", productsToShow: data.productsToShow, language: data.detectedLanguage || selectedLang, timestamp: Date.now() };
       setMessages(prev => [...prev, aMsg]);
       if (data.detectedLanguage && data.detectedLanguage !== selectedLang) setSelectedLang(data.detectedLanguage);
-      // Switch to chat mode after first real exchange so user can see full responses
-      if (mode === "voice" && messages.length > 1) setMode("chat");
+      // Switch to chat mode after 2 exchanges so user can see full conversation
+      const userMsgCount = [...messages, userMsg].filter(m => m.role === "user").length;
+      if (mode === "voice" && userMsgCount >= 2) setMode("chat");
       speakText(data.reply, data.detectedLanguage || selectedLang);
       if (data.productsToShow?.length && onNavigate) onNavigate(data.productsToShow);
     } catch {
