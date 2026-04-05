@@ -164,8 +164,10 @@ export default function AgentPanel({ onNavigate, context }: {
     if (!SR) return;
 
     const recognition = new SR();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
+
+    let stopTimer: ReturnType<typeof setTimeout> | null = null;
 
     recognition.onresult = (event: any) => {
       setMicReady(true);
@@ -173,16 +175,27 @@ export default function AgentPanel({ onNavigate, context }: {
         .map((r: any) => r[0].transcript)
         .join("");
       setInput(transcript);
-      if (event.results[0].isFinal) {
+
+      // Every time we get new words, reset the silence timer
+      if (stopTimer) clearTimeout(stopTimer);
+
+      if (event.results[event.results.length - 1].isFinal) {
         lastTranscriptRef.current = transcript;
+        // Wait 3 seconds of silence after final result, then auto-stop
+        stopTimer = setTimeout(() => {
+          try { recognition.stop(); } catch {}
+        }, 3000);
       }
     };
 
-    recognition.onerror = () => setIsListening(false);
+    recognition.onerror = () => {
+      if (stopTimer) clearTimeout(stopTimer);
+      setIsListening(false);
+    };
     recognition.onend = () => {
+      if (stopTimer) clearTimeout(stopTimer);
       setIsListening(false);
       setMicReady(false);
-      // Auto-send if we got something
       if (lastTranscriptRef.current.trim()) {
         setTimeout(() => {
           const btn = document.getElementById("saheli-send-btn");
