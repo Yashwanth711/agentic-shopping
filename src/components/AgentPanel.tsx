@@ -154,30 +154,50 @@ export default function AgentPanel({ onNavigate, context }: {
   }, [isListening]);
 
   // Speech Recognition
+  const finalTranscriptRef = useRef("");
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
 
     const recognition = new SR();
-    recognition.continuous = true;
+    recognition.continuous = false; // Single utterance — more reliable across browsers
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
-    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-
     recognition.onresult = (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((result: any) => result[0].transcript)
-        .join("");
-      setInput(transcript);
-      if (silenceTimer) clearTimeout(silenceTimer);
-      if (event.results[event.results.length - 1].isFinal) {
-        silenceTimer = setTimeout(() => recognition.stop(), 3000);
+      let interim = "";
+      let final = "";
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i];
+        if (result.isFinal) {
+          final += result[0].transcript;
+        } else {
+          interim += result[0].transcript;
+        }
+      }
+      finalTranscriptRef.current = final;
+      setInput(final || interim);
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error("Speech error:", event.error);
+      setIsListening(false);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      // Auto-send if we got a final transcript
+      if (finalTranscriptRef.current.trim()) {
+        // Small delay to let state update
+        setTimeout(() => {
+          const sendBtn = document.getElementById("saheli-send-btn");
+          if (sendBtn) sendBtn.click();
+        }, 300);
       }
     };
-    recognition.onerror = () => { if (silenceTimer) clearTimeout(silenceTimer); setIsListening(false); };
-    recognition.onend = () => { if (silenceTimer) clearTimeout(silenceTimer); setIsListening(false); };
+
     recognitionRef.current = recognition;
   }, []);
 
@@ -187,13 +207,21 @@ export default function AgentPanel({ onNavigate, context }: {
 
   const toggleListening = useCallback(() => {
     if (!recognitionRef.current) { alert("Speech not supported. Use Chrome or Edge."); return; }
-    if (isListening) { recognitionRef.current.stop(); setIsListening(false); }
-    else {
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
       if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
       setInput("");
+      finalTranscriptRef.current = "";
       recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
-      recognitionRef.current.start();
-      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        console.error("Failed to start recognition:", e);
+        setIsListening(false);
+      }
     }
   }, [isListening, selectedLang, isSpeaking]);
 
@@ -449,7 +477,7 @@ export default function AgentPanel({ onNavigate, context }: {
             className="flex-1 bg-gray-800 border border-gray-700 rounded-full px-5 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
             disabled={isLoading || !langChosen}
           />
-          <button onClick={sendMessage} disabled={isLoading || !input.trim() || !langChosen}
+          <button id="saheli-send-btn" onClick={sendMessage} disabled={isLoading || !input.trim() || !langChosen}
             className="w-12 h-12 bg-amber-500 text-black rounded-full flex items-center justify-center hover:bg-amber-400 disabled:opacity-30 transition-colors text-lg font-bold">
             ➤
           </button>
