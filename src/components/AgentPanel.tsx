@@ -85,6 +85,19 @@ export default function AgentPanel({ onNavigate, context }: {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
+  const sessionIdRef = useRef<string>("");
+
+  // Generate or restore session ID
+  useEffect(() => {
+    const saved = localStorage.getItem("saheli_session_id");
+    if (saved) {
+      sessionIdRef.current = saved;
+    } else {
+      const id = "s_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+      sessionIdRef.current = id;
+      localStorage.setItem("saheli_session_id", id);
+    }
+  }, []);
 
   // Restore session from localStorage
   useEffect(() => {
@@ -249,6 +262,7 @@ export default function AgentPanel({ onNavigate, context }: {
         body: JSON.stringify({
           messages: [...messages, userMessage].map((m) => ({ role: m.role, content: m.content })),
           language: selectedLang,
+          sessionId: sessionIdRef.current,
         }),
       });
       const data = await res.json();
