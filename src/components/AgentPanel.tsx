@@ -27,21 +27,69 @@ const LANG_CODES: Record<string, { speech: string; name: string; greeting: strin
   ur: { speech: "ur-IN", name: "Urdu", greeting: "Aadaab" },
 };
 
-// Render clickable product links
-function RenderMessage({ text }: { text: string }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+// Mini product card for chat
+function ChatProductCard({ product, onAddToCart }: { product: typeof products[0]; onAddToCart: (id: string) => void }) {
   return (
+    <div className="inline-block w-36 sm:w-40 flex-shrink-0 bg-gray-800 rounded-xl overflow-hidden border border-gray-700/50">
+      <Link href={`/product/${product.id}`} onClick={() => window.dispatchEvent(new CustomEvent("saheli-close"))}>
+        <div className="h-36 sm:h-40 bg-gray-700 overflow-hidden">
+          <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" loading="lazy" />
+        </div>
+      </Link>
+      <div className="p-2">
+        <p className="text-[11px] text-gray-300 line-clamp-2 leading-tight mb-1">{product.name}</p>
+        <div className="flex items-center gap-1 mb-1.5">
+          <span className="text-sm font-bold text-white">₹{product.price.toLocaleString()}</span>
+          {product.discount > 10 && <span className="text-[10px] text-green-400">{product.discount}% off</span>}
+        </div>
+        <div className="flex items-center gap-1 mb-2">
+          <span className="text-[10px] bg-green-600 text-white px-1 rounded">★{product.rating}</span>
+          <span className="text-[10px] text-gray-500">({product.reviewCount})</span>
+        </div>
+        <button onClick={() => onAddToCart(product.id)}
+          className="w-full text-[10px] bg-amber-600 text-white py-1.5 rounded-lg font-medium hover:bg-amber-500 transition-colors">
+          Add to Cart
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Extract product IDs mentioned in message and render cards
+function MessageWithCards({ text, onAddToCart }: { text: string; onAddToCart: (id: string) => void }) {
+  // Find all products mentioned in the message
+  const mentionedProducts: typeof products[0][] = [];
+  products.forEach(p => {
+    if (text.includes(p.name)) mentionedProducts.push(p);
+  });
+
+  // Render text with bold product names as links
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  const renderedText = (
     <span>
       {parts.map((part, i) => {
         const m = part.match(/^\*\*(.+)\*\*$/);
         if (m) {
           const p = products.find(x => m[1].toLowerCase().includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(m[1].toLowerCase()));
-          if (p) return <Link key={i} href={`/product/${p.id}`} onClick={() => { const e = new CustomEvent("saheli-close"); window.dispatchEvent(e); }} className="font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2">{m[1]}</Link>;
+          if (p) return <Link key={i} href={`/product/${p.id}`} onClick={() => window.dispatchEvent(new CustomEvent("saheli-close"))} className="font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2">{m[1]}</Link>;
           return <strong key={i} className="text-white">{m[1]}</strong>;
         }
         return <span key={i}>{part}</span>;
       })}
     </span>
+  );
+
+  return (
+    <>
+      <p className="whitespace-pre-wrap leading-relaxed">{renderedText}</p>
+      {mentionedProducts.length > 0 && (
+        <div className="flex gap-2 overflow-x-auto mt-3 pb-1 -mx-1 px-1">
+          {mentionedProducts.slice(0, 5).map(p => (
+            <ChatProductCard key={p.id} product={p} onAddToCart={onAddToCart} />
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -51,16 +99,45 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// Avatar SVG — Indian woman illustration
+// Custom Avatar — Indian woman illustration using SVG
 function Avatar({ size = 120 }: { size?: number }) {
   return (
     <div className="relative" style={{ width: size, height: size }}>
-      <div className="absolute inset-0 rounded-full bg-gradient-to-br from-amber-600/30 to-orange-600/30" style={{ padding: 4 }}>
-        <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-700 to-orange-800 flex items-center justify-center text-white overflow-hidden border-2 border-amber-500/50">
-          <span style={{ fontSize: size * 0.55 }}>🙏</span>
-        </div>
+      <div className="absolute inset-0 rounded-full bg-gradient-to-br from-amber-600/30 to-orange-600/30" style={{ padding: 3 }}>
+        <svg viewBox="0 0 100 100" className="w-full h-full rounded-full border-2 border-amber-500/50 overflow-hidden">
+          <circle cx="50" cy="50" r="50" fill="#92400e" />
+          {/* Hair */}
+          <ellipse cx="50" cy="30" rx="28" ry="25" fill="#1a1a2e" />
+          <ellipse cx="50" cy="22" rx="22" ry="16" fill="#1a1a2e" />
+          {/* Face */}
+          <ellipse cx="50" cy="42" rx="20" ry="22" fill="#d4a574" />
+          {/* Eyes */}
+          <ellipse cx="42" cy="40" rx="3" ry="2.5" fill="#1a1a2e" />
+          <ellipse cx="58" cy="40" rx="3" ry="2.5" fill="#1a1a2e" />
+          <circle cx="43" cy="39.5" r="0.8" fill="white" />
+          <circle cx="59" cy="39.5" r="0.8" fill="white" />
+          {/* Bindi */}
+          <circle cx="50" cy="34" r="1.5" fill="#dc2626" />
+          {/* Nose */}
+          <path d="M 50 42 Q 52 46 50 47" stroke="#b8956a" fill="none" strokeWidth="1" />
+          {/* Smile */}
+          <path d="M 43 50 Q 50 55 57 50" stroke="#8b4513" fill="none" strokeWidth="1.2" strokeLinecap="round" />
+          {/* Earrings */}
+          <circle cx="30" cy="45" r="2.5" fill="#f59e0b" />
+          <circle cx="70" cy="45" r="2.5" fill="#f59e0b" />
+          {/* Saree / Clothing */}
+          <path d="M 30 62 Q 50 58 70 62 L 75 100 L 25 100 Z" fill="#dc2626" />
+          <path d="M 35 65 Q 50 62 65 65 L 68 100 L 32 100 Z" fill="#b91c1c" />
+          {/* Saree pallu */}
+          <path d="M 30 62 Q 25 70 28 80 L 20 100 L 25 100 L 30 75 Z" fill="#f59e0b" opacity="0.8" />
+          {/* Necklace */}
+          <path d="M 35 60 Q 50 65 65 60" stroke="#f59e0b" fill="none" strokeWidth="2" />
+          <circle cx="50" cy="63" r="2" fill="#f59e0b" />
+          {/* Hands (namaste) */}
+          <path d="M 44 78 L 44 70 Q 47 67 50 67 Q 53 67 56 70 L 56 78" fill="#d4a574" />
+        </svg>
       </div>
-      <div className="absolute bottom-1 right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-950" />
+      <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-950" style={{ width: size * 0.12, height: size * 0.12 }} />
     </div>
   );
 }
@@ -83,6 +160,8 @@ export default function AgentPanel({ onNavigate, context }: {
   const [micReady, setMicReady] = useState(false);
   const [restored, setRestored] = useState(false);
   const [waveBars, setWaveBars] = useState<number[]>([3,5,8,4,7,9,5,3,6,8,4,7]);
+  const [cart, setCart] = useState<string[]>([]);
+  const [cartToast, setCartToast] = useState("");
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -125,6 +204,41 @@ export default function AgentPanel({ onNavigate, context }: {
   useEffect(() => { if (restored && messages.length > 0) localStorage.setItem("saheli_messages", JSON.stringify(messages)); }, [messages, restored]);
   useEffect(() => { if (restored && langChosen) localStorage.setItem("saheli_lang", selectedLang); }, [selectedLang, langChosen, restored]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Cart functions
+  const addToCart = useCallback((productId: string) => {
+    setCart(prev => {
+      if (prev.includes(productId)) return prev;
+      const updated = [...prev, productId];
+      localStorage.setItem("saheli_cart", JSON.stringify(updated));
+      return updated;
+    });
+    const p = products.find(x => x.id === productId);
+    setCartToast(p ? `${p.name} added!` : "Added to cart!");
+    setTimeout(() => setCartToast(""), 2000);
+  }, []);
+
+  // Restore cart
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("saheli_cart");
+      if (saved) setCart(JSON.parse(saved));
+    } catch {}
+  }, []);
+
+  // Auto-trigger — open Saheli on first visit after 5 seconds
+  useEffect(() => {
+    const hasVisited = localStorage.getItem("saheli_visited");
+    if (!hasVisited && mode === "closed") {
+      const timer = setTimeout(() => {
+        if (mode === "closed" && !langChosen) {
+          setShowLangPicker(true);
+        }
+        localStorage.setItem("saheli_visited", "true");
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [mode, langChosen]);
 
   // Close panel when product link is clicked
   useEffect(() => {
@@ -364,10 +478,12 @@ export default function AgentPanel({ onNavigate, context }: {
     return (
       <div className="fixed bottom-4 right-4 z-50 flex items-end gap-3 sm:bottom-6 sm:right-6">
         {/* Greeting bubble */}
-        <div className="bg-gray-900/95 backdrop-blur text-white rounded-2xl rounded-br-sm shadow-2xl p-3 max-w-[200px] sm:max-w-[240px] border border-amber-500/20">
+        <div className={`bg-gray-900/95 backdrop-blur text-white rounded-2xl rounded-br-sm shadow-2xl p-3 max-w-[200px] sm:max-w-[240px] border border-amber-500/20 ${showLangPicker ? "" : "animate-bounce"}`}
+          style={{ animationIterationCount: 3, animationDuration: "1s" }}>
           <p className="text-xs sm:text-sm leading-relaxed">
-            {context === "pdp" ? "Kya aapko ye product pasand aaya?" : "Namaste! Need help?"}
+            {context === "pdp" ? "Kya aapko ye product pasand aaya?" : "Namaste! Need help shopping?"}
           </p>
+          {cart.length > 0 && <p className="text-[10px] text-amber-400 mt-1">🛒 {cart.length} items in cart</p>}
         </div>
         {/* Avatar button */}
         <button onClick={() => {
@@ -484,7 +600,7 @@ export default function AgentPanel({ onNavigate, context }: {
           {lastAssistantMsg && (
             <div className="mt-8 mx-4 bg-gray-900/80 border border-gray-800 rounded-2xl px-5 py-3 max-w-sm">
               <p className="text-gray-300 text-sm text-center leading-relaxed whitespace-pre-wrap">
-                <RenderMessage text={lastAssistantMsg.content.length > 200 ? lastAssistantMsg.content.slice(0, 200) + "..." : lastAssistantMsg.content} />
+                {lastAssistantMsg.content.length > 200 ? lastAssistantMsg.content.slice(0, 200) + "..." : lastAssistantMsg.content}
               </p>
             </div>
           )}
@@ -557,6 +673,9 @@ export default function AgentPanel({ onNavigate, context }: {
               ))}
             </div>
           )}
+          {cart.length > 0 && (
+            <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full">🛒 {cart.length}</span>
+          )}
           <button onClick={() => setMode("voice")} className="text-gray-500 hover:text-amber-400 text-lg">🎤</button>
           <button onClick={() => setMode("closed")} className="text-gray-400 hover:text-white text-xl ml-1">✕</button>
         </div>
@@ -571,9 +690,10 @@ export default function AgentPanel({ onNavigate, context }: {
                 ? "bg-amber-600 text-white rounded-br-sm"
                 : "bg-gray-800/90 text-gray-200 border border-gray-700/50 rounded-bl-sm"
             }`}>
-              <p className="whitespace-pre-wrap leading-relaxed">
-                {msg.role === "assistant" ? <RenderMessage text={msg.content} /> : msg.content}
-              </p>
+              {msg.role === "assistant"
+                ? <MessageWithCards text={msg.content} onAddToCart={addToCart} />
+                : <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+              }
               <div className="flex items-center justify-between mt-1.5">
                 <span className="text-[10px] text-gray-500">{formatTime(msg.timestamp)}</span>
                 {msg.role === "assistant" && (
@@ -617,6 +737,13 @@ export default function AgentPanel({ onNavigate, context }: {
               {isTranscribing ? "Transcribing..." : "Recording... tap mic when done"}
             </span>
           </div>
+        </div>
+      )}
+
+      {/* Cart Toast */}
+      {cartToast && (
+        <div className="px-4 py-2 bg-green-500/20 border-t border-green-500/30 text-center">
+          <span className="text-xs text-green-400 font-medium">✓ {cartToast}</span>
         </div>
       )}
 
