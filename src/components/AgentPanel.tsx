@@ -99,13 +99,12 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// Avatar — clean gradient with Saheli initial
+// Avatar — Saheli illustration
 function Avatar({ size = 120 }: { size?: number }) {
-  const fontSize = size < 50 ? "text-lg" : size < 100 ? "text-2xl" : "text-4xl";
   return (
     <div className="relative" style={{ width: size, height: size }}>
-      <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 flex items-center justify-center shadow-lg ring-2 ring-amber-400/30">
-        <span className={`${fontSize} font-bold text-white`}>S</span>
+      <div className="w-full h-full rounded-full overflow-hidden shadow-lg ring-2 ring-amber-400/30 bg-gray-200">
+        <img src="/saheli-avatar.jpg" alt="Saheli" className="w-full h-full object-cover" />
       </div>
       <div className="absolute bottom-0 right-0 bg-green-500 rounded-full border-2 border-gray-950"
         style={{ width: Math.max(size * 0.18, 10), height: Math.max(size * 0.18, 10) }} />
