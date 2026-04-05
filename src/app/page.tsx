@@ -86,8 +86,23 @@ export default function Home() {
   const clearAgentFilter = () => setAgentProductIds([]);
 
   const categoryIcons: Record<string, string> = {
-    "Sarees": "👗", "Kurtis": "👚", "Lehengas": "💃", "Jewelry": "💍", "Dupattas": "🧣", "Blouse Pieces": "✂️",
+    "Sarees": "👗", "Kurtis": "👚", "Kids": "👶", "Jewelry": "💍", "Men": "👔", "Lehengas": "💃", "Dupattas": "🧣", "Blouse Pieces": "✂️",
   };
+
+  // Rotating hero banners
+  const [heroIndex, setHeroIndex] = useState(0);
+  const heroBanners = [
+    { title: "Discover India's Finest Collection", subtitle: "Handpicked sarees, kurtis & jewelry from master artisans across India", cta: "Shop Sarees", ctaAction: () => setFilters(f => ({ ...f, category: "Sarees" })), gradient: "from-pink-600 via-purple-600 to-indigo-600" },
+    { title: "Wedding Season Specials", subtitle: "Banarasi, Kanjivaram & Designer sarees — make your big day unforgettable", cta: "Wedding Collection", ctaAction: () => setFilters(f => ({ ...f, search: "wedding" })), gradient: "from-rose-600 via-red-500 to-orange-500" },
+    { title: "Kids Fashion Festival", subtitle: "Adorable outfits for your little ones — frocks, suits & ethnic wear", cta: "Shop Kids", ctaAction: () => setFilters(f => ({ ...f, category: "Kids" })), gradient: "from-cyan-600 via-blue-500 to-purple-500" },
+    { title: "Men's Style Store", subtitle: "Casual & formal shirts — everyday comfort meets sharp style", cta: "Shop Men", ctaAction: () => setFilters(f => ({ ...f, category: "Men" })), gradient: "from-gray-700 via-slate-600 to-zinc-700" },
+    { title: "Jewelry That Speaks", subtitle: "Kundan, gold-plated & statement pieces for every occasion", cta: "Shop Jewelry", ctaAction: () => setFilters(f => ({ ...f, category: "Jewelry" })), gradient: "from-amber-600 via-yellow-500 to-orange-500" },
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => setHeroIndex(i => (i + 1) % heroBanners.length), 5000);
+    return () => clearInterval(timer);
+  }, [heroBanners.length]);
 
   return (
     <div className="h-screen bg-gray-50">
@@ -179,19 +194,22 @@ export default function Home() {
           {/* Homepage Hero (when no filters active) */}
           {showHomepage && (
             <div>
-              {/* Hero Banner */}
-              <div className="bg-gradient-to-r from-pink-600 via-purple-600 to-indigo-600 text-white px-6 py-10 lg:py-16">
-                <div className="max-w-3xl">
-                  <h2 className="text-3xl lg:text-4xl font-bold mb-3">Discover India&apos;s Finest Collection</h2>
-                  <p className="text-pink-100 text-lg mb-6">Handpicked sarees, kurtis, lehengas & jewelry from master artisans across India</p>
-                  <div className="flex gap-3 flex-wrap">
-                    <button onClick={() => setFilters(f => ({ ...f, category: "Sarees" }))} className="bg-white text-pink-600 px-6 py-2.5 rounded-full font-semibold hover:bg-pink-50 transition-colors">
-                      Shop Sarees →
-                    </button>
-                    <button onClick={() => setFilters(f => ({ ...f, search: "wedding" }))} className="bg-white/20 text-white px-6 py-2.5 rounded-full font-semibold hover:bg-white/30 transition-colors border border-white/30">
-                      Wedding Collection
-                    </button>
-                  </div>
+              {/* Rotating Hero Banner */}
+              <div className={`bg-gradient-to-r ${heroBanners[heroIndex].gradient} text-white px-6 py-10 lg:py-16 transition-all duration-700 relative overflow-hidden`}>
+                <div className="max-w-3xl relative z-10">
+                  <h2 className="text-3xl lg:text-4xl font-bold mb-3 transition-all duration-500">{heroBanners[heroIndex].title}</h2>
+                  <p className="text-white/80 text-lg mb-6">{heroBanners[heroIndex].subtitle}</p>
+                  <button onClick={heroBanners[heroIndex].ctaAction}
+                    className="bg-white text-gray-900 px-6 py-2.5 rounded-full font-semibold hover:bg-gray-100 transition-colors">
+                    {heroBanners[heroIndex].cta} →
+                  </button>
+                </div>
+                {/* Dots */}
+                <div className="flex gap-2 mt-6 relative z-10">
+                  {heroBanners.map((_, i) => (
+                    <button key={i} onClick={() => setHeroIndex(i)}
+                      className={`w-2 h-2 rounded-full transition-all ${i === heroIndex ? "bg-white w-6" : "bg-white/40 hover:bg-white/60"}`} />
+                  ))}
                 </div>
               </div>
 
@@ -311,7 +329,7 @@ export default function Home() {
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">🙏</span>
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">Priya&apos;s Picks for You</p>
+                    <p className="text-sm font-semibold text-gray-800">Saheli&apos;s Picks for You</p>
                     <p className="text-xs text-gray-500">{agentFilteredProducts.length} products recommended based on your conversation</p>
                   </div>
                 </div>
@@ -352,7 +370,7 @@ export default function Home() {
               <div className="text-center py-16">
                 <p className="text-5xl mb-4">🔍</p>
                 <p className="text-lg text-gray-600 font-medium">No products found</p>
-                <p className="text-sm text-gray-400 mt-1">Try different filters or ask Priya for help! →</p>
+                <p className="text-sm text-gray-400 mt-1">Try different filters or ask Saheli for help! →</p>
                 <button
                   onClick={() => setFilters({ category: "", subcategory: "", fabric: "", color: "", occasion: "", priceRange: [0, 80000], sortBy: "popular", search: "" })}
                   className="mt-4 text-pink-600 hover:underline text-sm"

@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { products, Product } from "@/data/products";
+const GSHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbxd1mug0pGQJeeoNtrD_MIBE3x4oA3Gk4C2l9neZvfbC7yzaaKHesNZt-6-hKgYoHn2Cw/exec";
+
+// Fire-and-forget log to Google Sheet
+function logToSheet(sessionId: string, role: string, message: string, language: string, page: string = "homepage") {
+  fetch(GSHEET_WEBHOOK, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, role, message, language, page }),
+  }).catch(() => {});
+}
 
 // Build compact product catalog for AI — one line per product, ~3KB total
 const PRODUCT_CATALOG = products.map(p =>
@@ -182,7 +192,14 @@ function extractProductIds(text: string): string[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, language } = await req.json();
+    const { messages, language, sessionId } = await req.json();
+
+    // Log user message to Google Sheet
+    const sid = sessionId || "unknown";
+    const lastUserMsg = messages[messages.length - 1];
+    if (lastUserMsg?.role === "user") {
+      logToSheet(sid, "user", lastUserMsg.content, language || "en");
+    }
 
     // Flag-based provider: gemini | anthropic | deepseek | demo
     const provider = process.env.AI_PROVIDER || "demo";
@@ -203,14 +220,26 @@ export async function POST(req: NextRequest) {
     const langName = LANG_NAMES[finalLang] || "English";
 
     // Route to selected provider, fallback to demo on any error
+    let response: NextResponse;
     if (provider === "gemini" && geminiKey) {
-      return await handleGemini(messages, geminiKey, finalLang, langName);
+      response = await handleGemini(messages, geminiKey, finalLang, langName);
     } else if (provider === "anthropic" && anthropicKey) {
-      return await handleAnthropic(messages, anthropicKey, finalLang, langName);
+      response = await handleAnthropic(messages, anthropicKey, finalLang, langName);
     } else if (provider === "deepseek" && deepseekKey) {
-      return await handleDeepSeek(messages, deepseekKey, finalLang, langName);
+      response = await handleDeepSeek(messages, deepseekKey, finalLang, langName);
+    } else {
+      response = NextResponse.json(getDemoResponse(messages, finalLang));
     }
-    return NextResponse.json(getDemoResponse(messages, finalLang));
+
+    // Log assistant response to Google Sheet
+    try {
+      const body = await response.clone().json();
+      if (body.reply) {
+        logToSheet(sid, "assistant", body.reply, finalLang);
+      }
+    } catch { /* ignore logging errors */ }
+
+    return response;
   } catch (error) {
     console.error("Chat API error:", error);
     return NextResponse.json({
