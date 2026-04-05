@@ -135,16 +135,18 @@ export default function AgentPanel({ onNavigate, context }: {
 
   // Visibility
   useEffect(() => {
-    const h = () => { if (document.hidden) { window.speechSynthesis.cancel(); setIsSpeaking(false); if (isListening && recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); } } };
+    const h = () => { if (document.hidden) { window.speechSynthesis.cancel(); setIsSpeaking(false); if (isListening) { stopRecording(); } } };
     document.addEventListener("visibilitychange", h);
     return () => document.removeEventListener("visibilitychange", h);
   }, [isListening]);
 
-  // Speech Recognition
+  // Detect if Web Speech API is available (Android Chrome / Desktop Chrome)
+  const hasNativeSpeech = typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  // Native Speech Recognition — for Android/Desktop Chrome (free, instant)
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !hasNativeSpeech) return;
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = true;
@@ -159,65 +161,97 @@ export default function AgentPanel({ onNavigate, context }: {
         stopTimer = setTimeout(() => { try { rec.stop(); } catch {} }, 3000);
       }
     };
-    rec.onerror = (e: any) => {
-      if (stopTimer) clearTimeout(stopTimer);
-      // Don't flash on "no-speech" or "aborted" errors — these are normal
-      if (e.error !== "no-speech" && e.error !== "aborted") console.error("Speech error:", e.error);
-      setIsListening(false);
-    };
+    rec.onerror = () => { if (stopTimer) clearTimeout(stopTimer); setIsListening(false); };
     rec.onend = () => {
       if (stopTimer) clearTimeout(stopTimer);
       setIsListening(false); setMicReady(false);
-      // Only auto-send if we actually got a real transcript
-      const transcript = lastTranscriptRef.current.trim();
-      if (transcript && transcript.length > 0) {
+      if (lastTranscriptRef.current.trim()) {
         setTimeout(() => window.dispatchEvent(new CustomEvent("saheli-voice-done")), 150);
       }
     };
     recognitionRef.current = rec;
-  }, []);
+  }, [hasNativeSpeech]);
 
   useEffect(() => { if (recognitionRef.current) recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN"; }, [selectedLang]);
 
-  const toggleListening = useCallback(() => {
-    if (!recognitionRef.current) return;
-    if (isListening) {
-      recognitionRef.current.stop(); setIsListening(false);
-    } else {
-      if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
-      lastTranscriptRef.current = ""; setMicReady(false);
+  // Voice Recording via MediaRecorder — fallback for iPhone (uses Gemini transcription)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
-      // On mobile, request mic permission first before changing UI state
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ audio: true })
-          .then(() => {
-            // Permission granted — now start recognition
-            setInput("");
-            recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
-            try {
-              recognitionRef.current.start();
-              setIsListening(true);
-            } catch (e) {
-              console.warn("Mic start failed:", e);
-            }
-          })
-          .catch(() => {
-            // Permission denied — don't flash UI
-            alert("Please allow microphone access to use voice input.");
-          });
-      } else {
-        // Fallback for older browsers
-        setInput("");
-        recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
+  const startRecording = useCallback(async () => {
+    if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4" });
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType });
+        if (blob.size < 1000) { setIsListening(false); return; } // Too short, ignore
+        // Send to transcription API
+        setIsTranscribing(true);
+        setInput("Transcribing...");
         try {
-          recognitionRef.current.start();
-          setIsListening(true);
-        } catch (e) {
-          console.warn("Mic start failed:", e);
+          const langName = LANG_CODES[selectedLang]?.name || "English";
+          const formData = new FormData();
+          formData.append("audio", blob, "recording." + (recorder.mimeType.includes("webm") ? "webm" : "mp4"));
+          formData.append("language", langName);
+          const res = await fetch("/api/transcribe", { method: "POST", body: formData });
+          const data = await res.json();
+          if (data.transcript && !data.empty) {
+            setInput(data.transcript);
+            lastTranscriptRef.current = data.transcript;
+            // Auto-send after short delay
+            setTimeout(() => window.dispatchEvent(new CustomEvent("saheli-voice-done")), 300);
+          } else {
+            setInput("");
+          }
+        } catch {
+          setInput("");
+        } finally {
+          setIsTranscribing(false);
+          setIsListening(false);
         }
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsListening(true);
+      setInput("");
+      lastTranscriptRef.current = "";
+    } catch {
+      alert("Please allow microphone access to use voice input.");
+    }
+  }, [isSpeaking, selectedLang]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    }
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if (isListening) {
+      // Stop
+      if (hasNativeSpeech && recognitionRef.current) {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      } else {
+        stopRecording();
+      }
+    } else {
+      // Start
+      if (hasNativeSpeech && recognitionRef.current) {
+        if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+        setInput(""); lastTranscriptRef.current = ""; setMicReady(false);
+        recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
+        try { recognitionRef.current.start(); setIsListening(true); } catch {}
+      } else {
+        startRecording();
       }
     }
-  }, [isListening, selectedLang, isSpeaking]);
+  }, [isListening, hasNativeSpeech, startRecording, stopRecording, isSpeaking, selectedLang]);
 
   const speakText = useCallback((text: string, lang: string = selectedLang) => {
     if (!("speechSynthesis" in window)) return;
@@ -380,9 +414,18 @@ export default function AgentPanel({ onNavigate, context }: {
 
           {/* Status */}
           <div className="mt-8 text-center">
-            {isListening ? (
+            {isTranscribing ? (
               <>
-                <p className="text-gray-400 text-sm mb-3">{input ? `"${input}"` : "Listening to you..."}</p>
+                <p className="text-amber-400 text-sm mb-3">Transcribing your voice...</p>
+                <div className="flex gap-2 justify-center">
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                  <span className="w-2.5 h-2.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                </div>
+              </>
+            ) : isListening ? (
+              <>
+                <p className="text-gray-400 text-sm mb-3">Listening to you...</p>
                 {/* Waveform */}
                 <div className="flex items-end justify-center gap-1 h-10">
                   {waveBars.map((h, i) => (
@@ -391,7 +434,7 @@ export default function AgentPanel({ onNavigate, context }: {
                 </div>
                 <p className="text-red-400 text-xs mt-3 flex items-center justify-center gap-1">
                   <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-                  TAP TO RESPOND
+                  TAP WHEN DONE
                 </p>
               </>
             ) : isSpeaking ? (
@@ -541,12 +584,14 @@ export default function AgentPanel({ onNavigate, context }: {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Listening indicator */}
-      {isListening && (
+      {/* Listening / Transcribing indicator */}
+      {(isListening || isTranscribing) && (
         <div className="px-4 py-2 bg-gray-900/80 border-t border-gray-800">
           <div className="flex items-center justify-center gap-2">
             <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-xs text-gray-400">{input ? `"${input}"` : "Speak now..."}</span>
+            <span className="text-xs text-gray-400">
+              {isTranscribing ? "Transcribing..." : "Recording... tap mic when done"}
+            </span>
           </div>
         </div>
       )}
