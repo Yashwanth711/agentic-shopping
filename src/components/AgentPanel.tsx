@@ -504,20 +504,31 @@ export default function AgentPanel({ onNavigate, context }: {
       {/* Input Bar */}
       <div className="p-4 border-t border-gray-800 bg-gray-900">
         {isListening && (
-          <div className="flex items-center justify-center gap-2 mb-3 py-3 bg-red-500/10 rounded-xl border border-red-500/30">
-            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-sm text-red-400 font-medium">
-              {input ? `"${input}"` : "Speak now..."}
+          <div className={`flex items-center justify-center gap-2 mb-3 py-3 rounded-xl border ${input.trim() ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
+            <span className={`w-3 h-3 rounded-full animate-pulse ${input.trim() ? "bg-green-500" : "bg-red-500"}`} />
+            <span className={`text-sm font-medium ${input.trim() ? "text-green-400" : "text-red-400"}`}>
+              {input.trim() ? `"${input}" — tap 🎤 to send` : "Speak now..."}
             </span>
-            <button onClick={toggleListening} className="text-xs text-red-400 underline ml-2">Stop</button>
+            <button onClick={toggleListening} className="text-xs text-gray-500 underline ml-2">Cancel</button>
           </div>
         )}
         <div className="flex gap-2 max-w-3xl mx-auto">
-          <button onClick={toggleListening}
+          <button onClick={() => {
+              if (isListening && input.trim()) {
+                // Stop and send
+                if (recognitionRef.current) recognitionRef.current.stop();
+              } else {
+                toggleListening();
+              }
+            }}
             className={`w-12 h-12 rounded-full flex items-center justify-center transition-all text-lg ${
-              isListening ? "bg-red-500 text-white animate-pulse" : "bg-gray-800 text-gray-400 hover:bg-amber-500/20 hover:text-amber-400"
+              isListening && input.trim()
+                ? "bg-green-500 text-white"
+                : isListening
+                ? "bg-red-500 text-white animate-pulse"
+                : "bg-gray-800 text-gray-400 hover:bg-amber-500/20 hover:text-amber-400"
             }`}>
-            🎤
+            {isListening && input.trim() ? "➤" : "🎤"}
           </button>
           <input ref={inputRef} type="text" value={input}
             onChange={(e) => setInput(e.target.value)}
