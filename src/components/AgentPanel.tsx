@@ -185,14 +185,36 @@ export default function AgentPanel({ onNavigate, context }: {
       recognitionRef.current.stop(); setIsListening(false);
     } else {
       if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
-      setInput(""); lastTranscriptRef.current = ""; setMicReady(false);
-      recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-      } catch (e) {
-        // Already started or browser blocked — ignore silently
-        console.warn("Mic start failed:", e);
+      lastTranscriptRef.current = ""; setMicReady(false);
+
+      // On mobile, request mic permission first before changing UI state
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+          .then(() => {
+            // Permission granted — now start recognition
+            setInput("");
+            recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
+            try {
+              recognitionRef.current.start();
+              setIsListening(true);
+            } catch (e) {
+              console.warn("Mic start failed:", e);
+            }
+          })
+          .catch(() => {
+            // Permission denied — don't flash UI
+            alert("Please allow microphone access to use voice input.");
+          });
+      } else {
+        // Fallback for older browsers
+        setInput("");
+        recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
+        try {
+          recognitionRef.current.start();
+          setIsListening(true);
+        } catch (e) {
+          console.warn("Mic start failed:", e);
+        }
       }
     }
   }, [isListening, selectedLang, isSpeaking]);
@@ -414,6 +436,7 @@ export default function AgentPanel({ onNavigate, context }: {
           </div>
 
           {/* Mic — big center button */}
+          <div className="flex flex-col items-center gap-1">
           <button onClick={() => { if (isListening && input.trim()) { recognitionRef.current?.stop(); } else { toggleListening(); } }}
             className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all shadow-lg ${
               isListening && input.trim()
@@ -424,6 +447,8 @@ export default function AgentPanel({ onNavigate, context }: {
             }`}>
             <span className="text-2xl sm:text-3xl">{isListening && input.trim() ? "➤" : "🎤"}</span>
           </button>
+            <span className="text-[10px] text-gray-600">{isListening ? "Tap to send" : "Speak"}</span>
+          </div>
 
           {/* Switch to chat */}
           <div className="flex flex-col items-center gap-1">
