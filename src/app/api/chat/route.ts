@@ -192,13 +192,14 @@ function extractProductIds(text: string): string[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, language, sessionId } = await req.json();
+    const { messages, language, sessionId, inputMode } = await req.json();
 
     // Log user message to Google Sheet
     const sid = sessionId || "unknown";
     const lastUserMsg = messages[messages.length - 1];
     if (lastUserMsg?.role === "user") {
-      logToSheet(sid, "user", lastUserMsg.content, language || "en");
+      const modeTag = inputMode === "voice" ? "[VOICE] " : "";
+      logToSheet(sid, "user", modeTag + lastUserMsg.content, language || "en");
     }
 
     // Flag-based provider: gemini | anthropic | deepseek | demo
