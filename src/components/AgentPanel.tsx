@@ -156,8 +156,10 @@ export default function AgentPanel({ onNavigate, context }: {
     rec.onend = () => {
       if (stopTimer) clearTimeout(stopTimer);
       setIsListening(false); setMicReady(false);
+      // Auto-send if we got a transcript — works in both voice and chat mode
       if (lastTranscriptRef.current.trim()) {
-        setTimeout(() => { const b = document.getElementById("saheli-send-btn"); if (b) b.click(); }, 200);
+        // Use a custom event so sendMessage can be called regardless of mode
+        window.dispatchEvent(new CustomEvent("saheli-voice-done"));
       }
     };
     recognitionRef.current = rec;
@@ -223,12 +225,27 @@ export default function AgentPanel({ onNavigate, context }: {
       const aMsg: Message = { role: "assistant", content: data.reply, emotion: data.emotion || "happy", productsToShow: data.productsToShow, language: data.detectedLanguage || selectedLang, timestamp: Date.now() };
       setMessages(prev => [...prev, aMsg]);
       if (data.detectedLanguage && data.detectedLanguage !== selectedLang) setSelectedLang(data.detectedLanguage);
-      if (messages.length > 0) speakText(data.reply, data.detectedLanguage || selectedLang);
+      // Switch to chat mode after first real exchange so user can see full responses
+      if (mode === "voice" && messages.length > 1) setMode("chat");
+      speakText(data.reply, data.detectedLanguage || selectedLang);
       if (data.productsToShow?.length && onNavigate) onNavigate(data.productsToShow);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Sorry, something went wrong!", timestamp: Date.now() }]);
     } finally { setIsLoading(false); }
   };
+
+  // Listen for voice-done event to auto-send
+  // Use ref to always have latest sendMessage without stale closure
+  const sendRef = useRef<typeof sendMessage>(sendMessage);
+  useEffect(() => { sendRef.current = sendMessage; });
+  useEffect(() => {
+    const handler = () => {
+      // Small delay to ensure React state has updated from setInput
+      setTimeout(() => { if (sendRef.current) sendRef.current(); }, 100);
+    };
+    window.addEventListener("saheli-voice-done", handler);
+    return () => window.removeEventListener("saheli-voice-done", handler);
+  }, []);
 
   const logFeedback = (idx: number, rating: "up" | "down") => {
     setFeedback(prev => ({ ...prev, [idx]: rating }));
@@ -255,7 +272,13 @@ export default function AgentPanel({ onNavigate, context }: {
           </p>
         </div>
         {/* Avatar button */}
-        <button onClick={() => langChosen ? setMode("voice") : setShowLangPicker(true)}
+        <button onClick={() => {
+            if (langChosen) {
+              setMode(messages.length > 2 ? "chat" : "voice");
+            } else {
+              setShowLangPicker(true);
+            }
+          }}
           className="relative flex-shrink-0">
           <Avatar size={56} />
         </button>
@@ -363,11 +386,13 @@ export default function AgentPanel({ onNavigate, context }: {
         {/* Bottom Bar */}
         <div className="flex items-center justify-center gap-8 pb-8 pt-4 px-6">
           {/* Exit */}
-          <button onClick={clearChat}
-            className="w-12 h-12 sm:w-14 sm:h-14 bg-red-500/20 text-red-400 rounded-full flex items-center justify-center hover:bg-red-500/30 transition-colors">
-            <span className="text-xl">✕</span>
-          </button>
-          <span className="text-[10px] text-gray-600 absolute mt-16">Exit</span>
+          <div className="flex flex-col items-center gap-1">
+            <button onClick={() => { if (isListening) { recognitionRef.current?.stop(); setIsListening(false); } window.speechSynthesis.cancel(); setIsSpeaking(false); setMode("closed"); }}
+              className="w-12 h-12 sm:w-14 sm:h-14 bg-red-500/20 text-red-400 rounded-full flex items-center justify-center hover:bg-red-500/30 transition-colors">
+              <span className="text-xl">✕</span>
+            </button>
+            <span className="text-[10px] text-gray-600">Exit</span>
+          </div>
 
           {/* Mic — big center button */}
           <button onClick={() => { if (isListening && input.trim()) { recognitionRef.current?.stop(); } else { toggleListening(); } }}
@@ -382,10 +407,13 @@ export default function AgentPanel({ onNavigate, context }: {
           </button>
 
           {/* Switch to chat */}
-          <button onClick={() => setMode("chat")}
-            className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-800 text-gray-400 rounded-full flex items-center justify-center hover:bg-gray-700 transition-colors">
-            <span className="text-xl">💬</span>
-          </button>
+          <div className="flex flex-col items-center gap-1">
+            <button onClick={() => setMode("chat")}
+              className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-800 text-gray-400 rounded-full flex items-center justify-center hover:bg-gray-700 transition-colors">
+              <span className="text-xl">💬</span>
+            </button>
+            <span className="text-[10px] text-gray-600">Type</span>
+          </div>
         </div>
       </div>
     );
