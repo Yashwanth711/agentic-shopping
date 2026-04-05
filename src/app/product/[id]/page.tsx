@@ -27,8 +27,9 @@ export default function ProductPage() {
     .slice(0, 4);
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <div className="flex-1 overflow-y-auto">
+    <div className="h-screen bg-gray-50">
+      <AgentPanel context="pdp" />
+      <div className="overflow-y-auto h-full">
       {/* Header */}
       <header className="bg-white shadow-sm border-b px-6 py-3">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
@@ -188,10 +189,6 @@ export default function ProductPage() {
         )}
       </div>
       </div>
-      {/* Agent Panel */}
-      <aside className="w-[25%] min-w-[320px] max-w-[400px] hidden md:block border-l border-gray-200">
-        <AgentPanel />
-      </aside>
     </div>
   );
 }

@@ -90,9 +90,12 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="h-screen bg-gray-50">
+      {/* Saheli Floating Agent */}
+      <AgentPanel onNavigate={handleAgentNavigate} context="homepage" />
+
       {/* Main Shopping Area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden h-full">
         {/* Top Header */}
         <header className="bg-white shadow-sm border-b border-gray-200">
           {/* Top bar */}
@@ -395,10 +398,6 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Agent Panel (25%) */}
-      <aside className="w-[25%] min-w-[320px] max-w-[400px] hidden md:block border-l border-gray-200">
-        <AgentPanel onNavigate={handleAgentNavigate} />
-      </aside>
     </div>
   );
 }
