@@ -155,10 +155,8 @@ export default function AgentPanel({ onNavigate, context }: {
     return () => document.removeEventListener("visibilitychange", handler);
   }, [isListening]);
 
-  // Speech Recognition
-  const finalTranscriptRef = useRef("");
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const gotResultRef = useRef(false);
+  // Speech Recognition — simple and reliable
+  const lastTranscriptRef = useRef("");
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -166,50 +164,30 @@ export default function AgentPanel({ onNavigate, context }: {
     if (!SR) return;
 
     const recognition = new SR();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
 
     recognition.onresult = (event: any) => {
-      gotResultRef.current = true;
       setMicReady(true);
-      let interim = "";
-      let final = "";
-      for (let i = 0; i < event.results.length; i++) {
-        const result = event.results[i];
-        if (result.isFinal) {
-          final += result[0].transcript;
-        } else {
-          interim += result[0].transcript;
-        }
-      }
-      finalTranscriptRef.current = final;
-      setInput(final || interim);
-
-      // Reset silence timer — auto-stop after 2.5s of silence once we have a final result
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      if (final) {
-        silenceTimerRef.current = setTimeout(() => {
-          recognition.stop();
-        }, 2500);
+      const transcript = Array.from(event.results)
+        .map((r: any) => r[0].transcript)
+        .join("");
+      setInput(transcript);
+      if (event.results[0].isFinal) {
+        lastTranscriptRef.current = transcript;
       }
     };
 
-    recognition.onerror = (event: any) => {
-      console.error("Speech error:", event.error);
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      setIsListening(false);
-    };
-
+    recognition.onerror = () => setIsListening(false);
     recognition.onend = () => {
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       setIsListening(false);
-      // Auto-send if we got a transcript
-      if (finalTranscriptRef.current.trim()) {
+      setMicReady(false);
+      // Auto-send if we got something
+      if (lastTranscriptRef.current.trim()) {
         setTimeout(() => {
-          const sendBtn = document.getElementById("saheli-send-btn");
-          if (sendBtn) sendBtn.click();
-        }, 300);
+          const btn = document.getElementById("saheli-send-btn");
+          if (btn) btn.click();
+        }, 200);
       }
     };
 
@@ -228,25 +206,11 @@ export default function AgentPanel({ onNavigate, context }: {
     } else {
       if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
       setInput("");
-      finalTranscriptRef.current = "";
-      gotResultRef.current = false;
+      lastTranscriptRef.current = "";
       setMicReady(false);
       recognitionRef.current.lang = LANG_CODES[selectedLang]?.speech || "en-IN";
-      try {
-        recognitionRef.current.start();
-        setIsListening(true);
-        // Safety timeout — if no result after 8 seconds, stop and show hint
-        setTimeout(() => {
-          if (!gotResultRef.current && recognitionRef.current) {
-            try { recognitionRef.current.stop(); } catch {}
-            setIsListening(false);
-            setInput("");
-          }
-        }, 8000);
-      } catch (e) {
-        console.error("Failed to start recognition:", e);
-        setIsListening(false);
-      }
+      recognitionRef.current.start();
+      setIsListening(true);
     }
   }, [isListening, selectedLang, isSpeaking]);
 
@@ -304,11 +268,11 @@ export default function AgentPanel({ onNavigate, context }: {
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return;
     // Track if this message came from voice
-    const wasVoice = finalTranscriptRef.current.trim() === input.trim() && finalTranscriptRef.current.trim() !== "";
+    const wasVoice = lastTranscriptRef.current.trim() === input.trim() && lastTranscriptRef.current.trim() !== "";
     const userMessage: Message = { role: "user", content: input.trim(), language: selectedLang };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
-    finalTranscriptRef.current = "";
+    lastTranscriptRef.current = "";
     setIsLoading(true);
 
     try {
@@ -530,7 +494,7 @@ export default function AgentPanel({ onNavigate, context }: {
           <div className="flex items-center justify-center gap-2 mb-3 py-3 bg-red-500/10 rounded-xl border border-red-500/30">
             <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
             <span className="text-sm text-red-400 font-medium">
-              {input ? `"${input}"` : micReady ? "Listening..." : "Starting mic..."}
+              {input ? `"${input}"` : "Speak now..."}
             </span>
             <button onClick={toggleListening} className="text-xs text-red-400 underline ml-2">Stop</button>
           </div>
