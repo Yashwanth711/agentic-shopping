@@ -36,7 +36,7 @@ function RenderMessage({ text }: { text: string }) {
         const m = part.match(/^\*\*(.+)\*\*$/);
         if (m) {
           const p = products.find(x => m[1].toLowerCase().includes(x.name.toLowerCase()) || x.name.toLowerCase().includes(m[1].toLowerCase()));
-          if (p) return <Link key={i} href={`/product/${p.id}`} className="font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2">{m[1]}</Link>;
+          if (p) return <Link key={i} href={`/product/${p.id}`} onClick={() => { const e = new CustomEvent("saheli-close"); window.dispatchEvent(e); }} className="font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2">{m[1]}</Link>;
           return <strong key={i} className="text-white">{m[1]}</strong>;
         }
         return <span key={i}>{part}</span>;
@@ -125,6 +125,13 @@ export default function AgentPanel({ onNavigate, context }: {
   useEffect(() => { if (restored && messages.length > 0) localStorage.setItem("saheli_messages", JSON.stringify(messages)); }, [messages, restored]);
   useEffect(() => { if (restored && langChosen) localStorage.setItem("saheli_lang", selectedLang); }, [selectedLang, langChosen, restored]);
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Close panel when product link is clicked
+  useEffect(() => {
+    const handler = () => setMode("closed");
+    window.addEventListener("saheli-close", handler);
+    return () => window.removeEventListener("saheli-close", handler);
+  }, []);
 
   // Visibility
   useEffect(() => {
