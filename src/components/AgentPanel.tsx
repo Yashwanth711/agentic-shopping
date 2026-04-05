@@ -494,7 +494,7 @@ export default function AgentPanel({ onNavigate, context }: {
         <div className="flex items-center justify-center gap-8 pb-8 pt-4 px-6">
           {/* Exit */}
           <div className="flex flex-col items-center gap-1">
-            <button onClick={() => { if (isListening) { recognitionRef.current?.stop(); setIsListening(false); } window.speechSynthesis.cancel(); setIsSpeaking(false); setMode("closed"); }}
+            <button onClick={() => { if (isListening) { toggleListening(); } window.speechSynthesis.cancel(); setIsSpeaking(false); setMode("closed"); }}
               className="w-12 h-12 sm:w-14 sm:h-14 bg-red-500/20 text-red-400 rounded-full flex items-center justify-center hover:bg-red-500/30 transition-colors">
               <span className="text-xl">✕</span>
             </button>
@@ -503,17 +503,18 @@ export default function AgentPanel({ onNavigate, context }: {
 
           {/* Mic — big center button */}
           <div className="flex flex-col items-center gap-1">
-          <button onClick={() => { if (isListening && input.trim()) { recognitionRef.current?.stop(); } else { toggleListening(); } }}
+          <button onClick={() => toggleListening()}
             className={`w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all shadow-lg ${
-              isListening && input.trim()
-                ? "bg-green-500 text-white"
-                : isListening
-                ? "bg-amber-600 text-white ring-4 ring-amber-500/30 animate-pulse"
+              isListening
+                ? "bg-red-500 text-white ring-4 ring-red-500/30 animate-pulse"
+                : isTranscribing
+                ? "bg-amber-600 text-white opacity-50"
                 : "bg-gradient-to-br from-amber-600 to-orange-700 text-white hover:from-amber-500 hover:to-orange-600"
-            }`}>
-            <span className="text-2xl sm:text-3xl">{isListening && input.trim() ? "➤" : "🎤"}</span>
+            }`}
+            disabled={isTranscribing || isLoading}>
+            <span className="text-2xl sm:text-3xl">{isListening ? "⏹" : "🎤"}</span>
           </button>
-            <span className="text-[10px] text-gray-600">{isListening ? "Tap to send" : "Speak"}</span>
+            <span className="text-[10px] text-gray-600">{isTranscribing ? "Processing..." : isListening ? "Tap to stop" : "Speak"}</span>
           </div>
 
           {/* Switch to chat */}
@@ -622,11 +623,12 @@ export default function AgentPanel({ onNavigate, context }: {
       {/* Input Bar */}
       <div className="p-3 bg-gray-900/95 border-t border-gray-800">
         <div className="flex gap-2 max-w-2xl mx-auto">
-          <button onClick={() => { if (isListening && input.trim()) { recognitionRef.current?.stop(); } else { toggleListening(); } }}
+          <button onClick={() => toggleListening()}
+            disabled={isTranscribing || isLoading}
             className={`w-10 h-10 rounded-full flex items-center justify-center transition-all flex-shrink-0 ${
-              isListening && input.trim() ? "bg-green-500 text-white" : isListening ? "bg-red-500 text-white animate-pulse" : "bg-gray-800 text-gray-400 hover:text-amber-400"
+              isListening ? "bg-red-500 text-white animate-pulse" : isTranscribing ? "bg-amber-600 text-white opacity-50" : "bg-gray-800 text-gray-400 hover:text-amber-400"
             }`}>
-            {isListening && input.trim() ? "➤" : "🎤"}
+            {isListening ? "⏹" : "🎤"}
           </button>
           <input ref={inputRef} type="text" value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -634,7 +636,7 @@ export default function AgentPanel({ onNavigate, context }: {
             placeholder={`Message Saheli...`}
             className="flex-1 bg-gray-800 border border-gray-700 rounded-full px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-amber-500"
             disabled={isLoading || !langChosen} />
-          <button id="saheli-send-btn" onClick={sendMessage} disabled={isLoading || !input.trim()}
+          <button id="saheli-send-btn" onClick={sendMessage} disabled={isLoading || isTranscribing || (!input.trim() && !lastTranscriptRef.current.trim())}
             className="w-10 h-10 bg-amber-600 text-white rounded-full flex items-center justify-center hover:bg-amber-500 disabled:opacity-30 transition-colors flex-shrink-0">
             ➤
           </button>
