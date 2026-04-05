@@ -135,13 +135,22 @@ export default function AgentPanel({ onNavigate, context }: {
 
   // Visibility
   useEffect(() => {
-    const h = () => { if (document.hidden) { window.speechSynthesis.cancel(); setIsSpeaking(false); if (isListening) { stopRecording(); } } };
+    const h = () => {
+      if (document.hidden) {
+        window.speechSynthesis.cancel(); setIsSpeaking(false);
+        if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+        if (recognitionRef.current) try { recognitionRef.current.stop(); } catch {}
+        setIsListening(false);
+      }
+    };
     document.addEventListener("visibilitychange", h);
     return () => document.removeEventListener("visibilitychange", h);
   }, [isListening]);
 
-  // Detect if Web Speech API is available (Android Chrome / Desktop Chrome)
-  const hasNativeSpeech = typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  // Detect if Web Speech API actually works (not just exists)
+  // iPhone has webkitSpeechRecognition but it doesn't work — detect by checking for iOS
+  const isIOS = typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const hasNativeSpeech = !isIOS && typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
   // Native Speech Recognition — for Android/Desktop Chrome (free, instant)
   useEffect(() => {
@@ -183,7 +192,15 @@ export default function AgentPanel({ onNavigate, context }: {
     if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/mp4" });
+      // Pick a supported mime type — iPhone only supports mp4/m4a
+      let mimeType = "audio/webm";
+      if (typeof MediaRecorder.isTypeSupported === "function") {
+        if (MediaRecorder.isTypeSupported("audio/webm")) mimeType = "audio/webm";
+        else if (MediaRecorder.isTypeSupported("audio/mp4")) mimeType = "audio/mp4";
+        else if (MediaRecorder.isTypeSupported("audio/aac")) mimeType = "audio/aac";
+        else mimeType = ""; // Let browser choose default
+      }
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
       audioChunksRef.current = [];
       recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       recorder.onstop = async () => {
@@ -255,7 +272,11 @@ export default function AgentPanel({ onNavigate, context }: {
 
   const speakText = useCallback((text: string, lang: string = selectedLang) => {
     if (!("speechSynthesis" in window)) return;
-    if (isListening && recognitionRef.current) { recognitionRef.current.stop(); setIsListening(false); }
+    if (isListening) {
+      if (hasNativeSpeech && recognitionRef.current) recognitionRef.current.stop();
+      else if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
+      setIsListening(false);
+    }
     window.speechSynthesis.cancel();
     const clean = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/\*\*/g, "").replace(/\*/g, "").trim();
     if (!clean) return;
@@ -284,9 +305,11 @@ export default function AgentPanel({ onNavigate, context }: {
   }, [speakText]);
 
   const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-    const wasVoice = lastTranscriptRef.current.trim() === input.trim() && lastTranscriptRef.current.trim() !== "";
-    const userMsg: Message = { role: "user", content: input.trim(), language: selectedLang, timestamp: Date.now() };
+    // Use transcript ref if available (voice), otherwise use input state
+    const textToSend = lastTranscriptRef.current.trim() || input.trim();
+    if (!textToSend || textToSend === "Transcribing..." || isLoading) return;
+    const wasVoice = lastTranscriptRef.current.trim() !== "";
+    const userMsg: Message = { role: "user", content: textToSend, language: selectedLang, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
     setInput(""); lastTranscriptRef.current = ""; setIsLoading(true);
 
