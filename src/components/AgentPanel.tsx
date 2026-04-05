@@ -99,45 +99,16 @@ function formatTime(ts?: number): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// Custom Avatar — Indian woman illustration using SVG
+// Avatar — clean gradient with Saheli initial
 function Avatar({ size = 120 }: { size?: number }) {
+  const fontSize = size < 50 ? "text-lg" : size < 100 ? "text-2xl" : "text-4xl";
   return (
     <div className="relative" style={{ width: size, height: size }}>
-      <div className="absolute inset-0 rounded-full bg-gradient-to-br from-amber-600/30 to-orange-600/30" style={{ padding: 3 }}>
-        <svg viewBox="0 0 100 100" className="w-full h-full rounded-full border-2 border-amber-500/50 overflow-hidden">
-          <circle cx="50" cy="50" r="50" fill="#92400e" />
-          {/* Hair */}
-          <ellipse cx="50" cy="30" rx="28" ry="25" fill="#1a1a2e" />
-          <ellipse cx="50" cy="22" rx="22" ry="16" fill="#1a1a2e" />
-          {/* Face */}
-          <ellipse cx="50" cy="42" rx="20" ry="22" fill="#d4a574" />
-          {/* Eyes */}
-          <ellipse cx="42" cy="40" rx="3" ry="2.5" fill="#1a1a2e" />
-          <ellipse cx="58" cy="40" rx="3" ry="2.5" fill="#1a1a2e" />
-          <circle cx="43" cy="39.5" r="0.8" fill="white" />
-          <circle cx="59" cy="39.5" r="0.8" fill="white" />
-          {/* Bindi */}
-          <circle cx="50" cy="34" r="1.5" fill="#dc2626" />
-          {/* Nose */}
-          <path d="M 50 42 Q 52 46 50 47" stroke="#b8956a" fill="none" strokeWidth="1" />
-          {/* Smile */}
-          <path d="M 43 50 Q 50 55 57 50" stroke="#8b4513" fill="none" strokeWidth="1.2" strokeLinecap="round" />
-          {/* Earrings */}
-          <circle cx="30" cy="45" r="2.5" fill="#f59e0b" />
-          <circle cx="70" cy="45" r="2.5" fill="#f59e0b" />
-          {/* Saree / Clothing */}
-          <path d="M 30 62 Q 50 58 70 62 L 75 100 L 25 100 Z" fill="#dc2626" />
-          <path d="M 35 65 Q 50 62 65 65 L 68 100 L 32 100 Z" fill="#b91c1c" />
-          {/* Saree pallu */}
-          <path d="M 30 62 Q 25 70 28 80 L 20 100 L 25 100 L 30 75 Z" fill="#f59e0b" opacity="0.8" />
-          {/* Necklace */}
-          <path d="M 35 60 Q 50 65 65 60" stroke="#f59e0b" fill="none" strokeWidth="2" />
-          <circle cx="50" cy="63" r="2" fill="#f59e0b" />
-          {/* Hands (namaste) */}
-          <path d="M 44 78 L 44 70 Q 47 67 50 67 Q 53 67 56 70 L 56 78" fill="#d4a574" />
-        </svg>
+      <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-500 via-orange-500 to-red-500 flex items-center justify-center shadow-lg ring-2 ring-amber-400/30">
+        <span className={`${fontSize} font-bold text-white`}>S</span>
       </div>
-      <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-gray-950" style={{ width: size * 0.12, height: size * 0.12 }} />
+      <div className="absolute bottom-0 right-0 bg-green-500 rounded-full border-2 border-gray-950"
+        style={{ width: Math.max(size * 0.18, 10), height: Math.max(size * 0.18, 10) }} />
     </div>
   );
 }
@@ -302,10 +273,23 @@ export default function AgentPanel({ onNavigate, context }: {
   const audioChunksRef = useRef<Blob[]>([]);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
   const startRecording = useCallback(async () => {
     if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Set up audio analyser for live waveform
+      try {
+        const audioCtx = new AudioContext();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 32;
+        source.connect(analyser);
+        analyserRef.current = analyser;
+      } catch {}
+
       // Pick a supported mime type — iPhone only supports mp4/m4a
       let mimeType = "audio/webm";
       if (typeof MediaRecorder.isTypeSupported === "function") {
@@ -564,7 +548,9 @@ export default function AgentPanel({ onNavigate, context }: {
               </>
             ) : isListening ? (
               <>
-                <p className="text-gray-400 text-sm mb-3">Listening to you...</p>
+                <p className="text-gray-300 text-sm mb-3 max-w-xs mx-auto">
+                  {input ? `"${input}"` : "Listening to you..."}
+                </p>
                 {/* Waveform */}
                 <div className="flex items-end justify-center gap-1 h-10">
                   {waveBars.map((h, i) => (
