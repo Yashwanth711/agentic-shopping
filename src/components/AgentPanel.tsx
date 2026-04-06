@@ -196,6 +196,59 @@ export default function AgentPanel({ onNavigate, context }: {
     } catch {}
   }, []);
 
+  // Location-based language detection — runs once, no API cost
+  useEffect(() => {
+    // Skip if language already chosen
+    if (langChosen || localStorage.getItem("saheli_lang")) return;
+
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        // Map Indian regions to languages by approximate lat/lng bounding boxes
+        const regionLangs: { minLat: number; maxLat: number; minLng: number; maxLng: number; lang: string }[] = [
+          // Andhra Pradesh + Telangana (Telugu)
+          { minLat: 12.5, maxLat: 19.5, minLng: 77, maxLng: 84.5, lang: "te" },
+          // Tamil Nadu (Tamil)
+          { minLat: 8, maxLat: 13.5, minLng: 76, maxLng: 80.5, lang: "ta" },
+          // Karnataka (Kannada)
+          { minLat: 11.5, maxLat: 18.5, minLng: 74, maxLng: 78.5, lang: "kn" },
+          // Kerala (Malayalam)
+          { minLat: 8, maxLat: 12.8, minLng: 74.5, maxLng: 77.5, lang: "ml" },
+          // West Bengal (Bengali)
+          { minLat: 21.5, maxLat: 27, minLng: 86.5, maxLng: 89.5, lang: "bn" },
+          // Maharashtra (Marathi)
+          { minLat: 15.5, maxLat: 22, minLng: 72.5, maxLng: 80.5, lang: "mr" },
+          // Gujarat (Gujarati)
+          { minLat: 20, maxLat: 24.5, minLng: 68.5, maxLng: 74.5, lang: "gu" },
+          // Punjab (Punjabi)
+          { minLat: 29.5, maxLat: 32.5, minLng: 73.5, maxLng: 77, lang: "pa" },
+          // Odisha (Odia)
+          { minLat: 17.5, maxLat: 22.5, minLng: 81.5, maxLng: 87.5, lang: "or" },
+          // UP + Bihar + MP + Rajasthan + Delhi (Hindi) — broad central/north India
+          { minLat: 22, maxLat: 31, minLng: 73, maxLng: 88, lang: "hi" },
+        ];
+
+        let detectedLang = "hi"; // Default to Hindi for India
+        for (const region of regionLangs) {
+          if (latitude >= region.minLat && latitude <= region.maxLat &&
+              longitude >= region.minLng && longitude <= region.maxLng) {
+            detectedLang = region.lang;
+            break;
+          }
+        }
+
+        // Only pre-select if not already chosen
+        if (!langChosen) {
+          setSelectedLang(detectedLang);
+          localStorage.setItem("saheli_detected_lang", detectedLang);
+        }
+      },
+      () => { /* Permission denied or error — silently ignore */ },
+      { timeout: 5000, maximumAge: 600000 } // Cache for 10 min
+    );
+  }, [langChosen]);
+
   // Auto-trigger — open Saheli on first visit after 5 seconds
   useEffect(() => {
     const hasVisited = localStorage.getItem("saheli_visited");
@@ -401,10 +454,14 @@ export default function AgentPanel({ onNavigate, context }: {
     setTimeout(() => speakText(msg, lang), 500);
   }, [speakText]);
 
+  const isSendingRef = useRef(false);
   const sendMessage = async () => {
+    // Prevent double-send
+    if (isSendingRef.current) return;
     // Use transcript ref if available (voice), otherwise use input state
     const textToSend = lastTranscriptRef.current.trim() || input.trim();
     if (!textToSend || textToSend === "Transcribing..." || isLoading) return;
+    isSendingRef.current = true;
     const wasVoice = lastTranscriptRef.current.trim() !== "";
     const userMsg: Message = { role: "user", content: textToSend, language: selectedLang, timestamp: Date.now() };
     setMessages(prev => [...prev, userMsg]);
@@ -426,7 +483,7 @@ export default function AgentPanel({ onNavigate, context }: {
       if (data.productsToShow?.length && onNavigate) onNavigate(data.productsToShow);
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "Sorry, something went wrong!", timestamp: Date.now() }]);
-    } finally { setIsLoading(false); }
+    } finally { setIsLoading(false); isSendingRef.current = false; }
   };
 
   // Listen for voice-done event to auto-send
@@ -484,11 +541,13 @@ export default function AgentPanel({ onNavigate, context }: {
         {showLangPicker && (
           <div className="absolute bottom-20 right-0 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl p-4 w-[280px] sm:w-[320px] z-50">
             <p className="text-white text-sm font-semibold mb-1 text-center">Choose your language</p>
-            <p className="text-gray-500 text-xs mb-3 text-center">Apni bhasha chunein</p>
+            <p className="text-gray-500 text-xs mb-3 text-center">
+              {selectedLang !== "en" ? `We detected ${LANG_CODES[selectedLang]?.name} — tap to confirm or choose another` : "Apni bhasha chunein"}
+            </p>
             <div className="grid grid-cols-3 gap-2">
               {Object.entries(LANG_CODES).map(([code, lang]) => (
                 <button key={code} onClick={() => handleLangSelect(code)}
-                  className="py-2.5 px-1 rounded-xl border border-gray-700 hover:border-amber-500 hover:bg-amber-500/10 text-center transition-all">
+                  className={`py-2.5 px-1 rounded-xl border text-center transition-all ${selectedLang === code ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500" : "border-gray-700 hover:border-amber-500 hover:bg-amber-500/10"}`}>
                   <span className="block text-sm">{lang.greeting}</span>
                   <span className="text-[10px] text-gray-500">{lang.name}</span>
                 </button>

@@ -29,15 +29,16 @@ YOUR STYLE:
 PRODUCT CATALOG (${products.length} products):
 ${PRODUCT_CATALOG}
 
-CRITICAL CONVERSATION FLOW — FOLLOW THIS STRICTLY:
-1. FIRST: NEVER show products immediately. ALWAYS ask 2 clarifying questions first:
-   - "Koi occasion ke liye dekh rahe ho Sir/Madam? (wedding, festival, daily wear, party?)"
-   - "Budget range bataa sakte hai Sir/Madam?"
-   Only show products AFTER you know both occasion AND budget. If user gives only one, ask the other.
-2. THEN: Thank them, say what you understood ("achha, wedding ke liye ₹500-1000 mein saree chahiye"), recommend 3-5 products with **bold names**, end with "inme se koi pasand aaya?"
-3. HESITATION: If they doubt quality/size → quote ratings, mention review count, say they can return
-4. NUDGE: If they like something → "Ye pasand aa rha ho toh order lagadu Sir/Madam?"
-5. CROSS-SELL: After agreement → suggest ONE complementary item (blouse with saree)
+CONVERSATION FLOW:
+1. If user asks for a CATEGORY (sarees, kids, kurtis) without occasion/budget → ask ONE question: "Koi occasion ke liye ya budget batayenge Sir/Madam?" — then show products in the NEXT message
+2. If user gives category + occasion OR budget → show 3-5 products immediately with **bold names**
+3. If user gives category + occasion + budget → show products right away, no more questions
+4. NEVER ask more than 1 clarifying question per message
+5. NEVER refuse to show products after 2 exchanges — if user asks twice, show your best picks
+6. After showing products → "inme se koi pasand aaya Sir/Madam?"
+7. HESITATION: quote ratings, review count, return policy
+8. NUDGE: "Ye pasand aa rha ho toh order lagadu Sir/Madam?"
+9. CROSS-SELL: suggest ONE complementary item (blouse with saree)
 
 RULES:
 - Use EXACT names, prices, ratings from catalog — never invent products or store facts
@@ -442,54 +443,21 @@ async function handleGemini(
 }
 
 function getDemoResponse(messages: { role: string; content: string }[], language: string): { reply: string; emotion: string; productsToShow: string[]; detectedLanguage?: string } {
-  const rawMsg = messages[messages.length - 1]?.content || "";
-  // Trust the passed language (from picker) — don't re-detect from script
-  const detectedLang = language || detectLanguage(rawMsg) || "en";
+  const detectedLang = language || "en";
 
-  // Find relevant products
-  const relevant = findRelevantProducts(rawMsg, detectedLang);
-
-  const greetings: Record<string, { hello: string; help: string; occasion: string; budget: string }> = {
-    hi: { hello: "नमस्ते", help: "मैं आपकी मदद करना चाहूंगी", occasion: "आप किस अवसर के लिए खरीदारी कर रहे हैं? (शादी, त्योहार, रोज़ का?)", budget: "आपका बजट क्या है?" },
-    gu: { hello: "નમસ્તે", help: "હું તમને મદદ કરવા માંગુ છું", occasion: "તમે કયા પ્રસંગ માટે ખરીદી કરો છો? (લગ્ન, તહેવાર, રોજિંદા?)", budget: "તમારું બજેટ શું છે?" },
-    te: { hello: "నమస్కారం", help: "నేను మీకు సహాయం చేయాలనుకుంటున్నాను", occasion: "మీరు ఏ సందర్భం కోసం షాపింగ్ చేస్తున్నారు?", budget: "మీ బడ్జెట్ ఎంత?" },
-    ta: { hello: "வணக்கம்", help: "நான் உங்களுக்கு உதவ விரும்புகிறேன்", occasion: "நீங்கள் எந்த நிகழ்விற்காக ஷாப்பிங் செய்கிறீர்கள்?", budget: "உங்கள் பட்ஜெட் என்ன?" },
-    kn: { hello: "ನಮಸ್ಕಾರ", help: "ನಾನು ನಿಮಗೆ ಸಹಾಯ ಮಾಡಲು ಬಯಸುತ್ತೇನೆ", occasion: "ನೀವು ಯಾವ ಸಂದರ್ಭಕ್ಕಾಗಿ ಶಾಪಿಂಗ್ ಮಾಡುತ್ತಿದ್ದೀರಿ?", budget: "ನಿಮ್ಮ ಬಜೆಟ್ ಎಷ್ಟು?" },
-    ml: { hello: "നമസ്കാരം", help: "ഞാൻ നിങ്ങളെ സഹായിക്കാൻ ആഗ്രഹിക്കുന്നു", occasion: "ഏത് അവസരത്തിനാണ് ഷോപ്പിംഗ്?", budget: "നിങ്ങളുടെ ബജറ്റ് എത്ര?" },
-    bn: { hello: "নমস্কার", help: "আমি আপনাকে সাহায্য করতে চাই", occasion: "আপনি কোন উপলক্ষে কেনাকাটা করছেন?", budget: "আপনার বাজেট কত?" },
-    mr: { hello: "नमस्कार", help: "मला तुम्हाला मदत करायला आवडेल", occasion: "तुम्ही कोणत्या प्रसंगासाठी खरेदी करत आहात?", budget: "तुमचे बजेट काय आहे?" },
-    pa: { hello: "ਸਤ ਸ੍ਰੀ ਅਕਾਲ", help: "ਮੈਂ ਤੁਹਾਡੀ ਮਦਦ ਕਰਨਾ ਚਾਹੁੰਦੀ ਹਾਂ", occasion: "ਤੁਸੀਂ ਕਿਸ ਮੌਕੇ ਲਈ ਖਰੀਦਦਾਰੀ ਕਰ ਰਹੇ ਹੋ?", budget: "ਤੁਹਾਡਾ ਬਜਟ ਕੀ ਹੈ?" },
-    or: { hello: "ନମସ୍କାର", help: "ମୁଁ ଆପଣଙ୍କୁ ସାହାଯ୍ୟ କରିବାକୁ ଚାହେଁ", occasion: "ଆପଣ କେଉଁ ଉତ୍ସବ ପାଇଁ ଖରୀଦ କରୁଛନ୍ତି?", budget: "ଆପଣଙ୍କ ବଜେଟ କେତେ?" },
-    ur: { hello: "آداب", help: "میں آپ کی مدد کرنا چاہتی ہوں", occasion: "آپ کس موقع کے لیے خریداری کر رہے ہیں؟", budget: "آپ کا بجٹ کیا ہے؟" },
+  // Demo mode follows same conversation flow — ask occasion + budget, no product dumps
+  const responses: Record<string, string> = {
+    en: "I'd love to help you find the perfect outfit! Could you tell me:\n\n1. What's the occasion? (wedding, festival, daily wear, party?)\n2. What's your budget range?\n\nThis will help me show you the best options!",
+    hi: "Namaste! Mein aapki madad karna chahungi. Bataiye:\n\n1. Kaunsa occasion hai? (shaadi, tyohaar, daily wear, party?)\n2. Budget range kya hai?\n\nFir mein aapko sahi options dikha sakti hoon!",
+    te: "నమస్కారం! మీకు సహాయం చేయాలనుకుంటున్నాను. దయచేసి చెప్పండి:\n\n1. ఏ సందర్భం కోసం? (పెళ్లి, పండగ, రోజువారీ, పార్టీ?)\n2. మీ బడ్జెట్ ఎంత?\n\nఅప్పుడు మీకు సరైన ఎంపికలు చూపిస్తాను!",
+    ta: "வணக்கம்! உங்களுக்கு உதவ விரும்புகிறேன். சொல்லுங்க:\n\n1. என்ன occasion? (கல்யாணம், பண்டிகை, daily wear, party?)\n2. Budget range என்ன?\n\nசரியான options காட்றேன்!",
   };
 
-  // If non-English, respond in that language with products
-  if (detectedLang !== "en" && greetings[detectedLang]) {
-    const g = greetings[detectedLang];
-    const prods = relevant.length > 0 ? relevant : products.sort((a, b) => b.reviewCount - a.reviewCount).slice(0, 3);
-    return {
-      reply: `${g.hello}! ${g.help}.\n\n${prods.map((p, i) => `${i + 1}. **${p.name}** — ₹${p.price.toLocaleString()} (★${p.rating}, ${p.reviewCount} reviews)\n   ${p.color} | ${p.fabric} | ${p.tags[0]}`).join("\n\n")}\n\n${g.occasion}`,
-      emotion: "greeting",
-      productsToShow: prods.map(p => p.id),
-      detectedLanguage: detectedLang,
-    };
-  }
-
-  // English — use smart product search
-  if (relevant.length > 0) {
-    return {
-      reply: `Great choice! Here are some options I found for you:\n\n${relevant.slice(0, 5).map((p, i) => `${i + 1}. **${p.name}** — ₹${p.price.toLocaleString()} (★${p.rating}, ${p.reviewCount} reviews)\n   ${p.color} ${p.fabric} | ${p.tags[0]} | ${p.occasion.join(", ")}\n   ${p.inventory > 0 ? `${p.inventory} left` : "Out of stock"} | ${p.discount}% off`).join("\n\n")}\n\nWould you like to see any of these in detail? I can also help with different options!`,
-      emotion: "excited",
-      productsToShow: relevant.slice(0, 5).map(p => p.id),
-      detectedLanguage: detectedLang,
-    };
-  }
-
-  // Default
   return {
-    reply: "I'd love to help you find the perfect product!\n\nCould you tell me:\n1. What are you looking for? (saree, kurti, jewelry, kids, men's shirts?)\n2. What's the occasion? (wedding, festival, daily wear?)\n3. Any preference? (color, fabric, budget?)\n\nOr just browse our categories above and I'll guide you!",
-    emotion: "patient",
+    reply: responses[detectedLang] || responses.en,
+    emotion: "greeting",
     productsToShow: [],
     detectedLanguage: detectedLang,
   };
 }
+
