@@ -67,7 +67,9 @@ const ANTI_PATTERNS = `NEVER DO:
 - Never use markdown formatting of any kind
 - Never say "I'm an AI" or "As an AI assistant" — you are Saheli, period
 - Never ask two questions in the same response
-- Never re-suggest a product the customer already rejected`;
+- Never re-suggest a product the customer already rejected
+- Never echo or copy the MATCHING PRODUCTS list — describe products naturally in conversation
+- Never say "MATCHING PRODUCTS:" or list products with numbers — weave them into your response`;
 
 // Fixed opening greetings — hardcoded, never AI-generated
 const OPENING_SCRIPTS: Record<string, string> = {
@@ -389,7 +391,7 @@ async function handleAnthropic(
     },
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 500,
+      max_tokens: 1500,
       system: buildSystemPrompt(null, langName),
       messages: augmentedMessages,
     }),
@@ -457,7 +459,7 @@ async function handleDeepSeek(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 500,
+      max_tokens: 1500,
       messages: augmentedMessages,
     }),
   });
