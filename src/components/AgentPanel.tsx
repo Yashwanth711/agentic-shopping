@@ -160,6 +160,7 @@ export default function AgentPanel({ onNavigate, context, productId }: {
   const [waveBars, setWaveBars] = useState<number[]>([3,5,8,4,7,9,5,3,6,8,4,7]);
   const [cart, setCart] = useState<string[]>([]);
   const [cartToast, setCartToast] = useState("");
+  const [showCart, setShowCart] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -817,12 +818,42 @@ export default function AgentPanel({ onNavigate, context, productId }: {
             </div>
           )}
           {cart.length > 0 && (
-            <span className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full">🛒 {cart.length}</span>
+            <button onClick={() => setShowCart(!showCart)} className="text-[10px] bg-amber-600 text-white px-2 py-0.5 rounded-full hover:bg-amber-500 transition-colors">🛒 {cart.length}</button>
           )}
           <button onClick={() => setMode("voice")} className="text-gray-500 hover:text-amber-400 text-lg">🎤</button>
           <button onClick={() => setMode("closed")} className="text-gray-400 hover:text-white text-xl ml-1">✕</button>
         </div>
       </div>
+
+      {/* Cart Drawer */}
+      {showCart && cart.length > 0 && (
+        <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 max-h-64 overflow-y-auto">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm font-bold text-white">🛒 Cart ({cart.length} items)</span>
+            <button onClick={() => setShowCart(false)} className="text-gray-400 hover:text-white text-xs">✕</button>
+          </div>
+          {cart.map(id => {
+            const p = products.find(x => x.id === id);
+            if (!p) return null;
+            return (
+              <div key={id} className="flex items-center gap-2 py-1.5 border-b border-gray-700/50">
+                <img src={p.images[0]} alt={p.name} className="w-10 h-10 rounded object-cover" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] text-gray-200 truncate">{p.name}</p>
+                  <p className="text-[11px] text-amber-400 font-bold">₹{p.price.toLocaleString()}</p>
+                </div>
+                <button onClick={() => { setCart(prev => { const updated = prev.filter(x => x !== id); localStorage.setItem("saheli_cart", JSON.stringify(updated)); return updated; }); }}
+                  className="text-red-400 hover:text-red-300 text-xs px-1">✕</button>
+              </div>
+            );
+          })}
+          <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-700">
+            <span className="text-sm text-white font-bold">Total: ₹{cart.reduce((sum, id) => { const p = products.find(x => x.id === id); return sum + (p?.price || 0); }, 0).toLocaleString()}</span>
+            <button onClick={() => { alert("Order placed! 🎉 (demo)"); setCart([]); localStorage.removeItem("saheli_cart"); setShowCart(false); }}
+              className="bg-green-600 text-white text-xs px-4 py-1.5 rounded-lg font-medium hover:bg-green-500">Order Now</button>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
