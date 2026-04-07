@@ -112,9 +112,10 @@ function Avatar({ size = 120 }: { size?: number }) {
   );
 }
 
-export default function AgentPanel({ onNavigate, context }: {
+export default function AgentPanel({ onNavigate, context, productId }: {
   onNavigate?: (productIds: string | string[]) => void;
-  context?: "homepage" | "pdp" | "search";
+  context?: "homepage" | "pdp" | "search" | "menu" | "cart";
+  productId?: string;
 }) {
   // States
   const [mode, setMode] = useState<"closed" | "voice" | "chat">("closed");
@@ -201,7 +202,7 @@ export default function AgentPanel({ onNavigate, context }: {
     // Skip if language already chosen
     if (langChosen || localStorage.getItem("saheli_lang")) return;
 
-    if (!navigator.geolocation) return;
+    if (typeof window === "undefined" || !navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -470,7 +471,7 @@ export default function AgentPanel({ onNavigate, context }: {
     try {
       const res = await fetch("/api/chat", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })), language: selectedLang, sessionId: sessionIdRef.current, inputMode: wasVoice ? "voice" : "text" }),
+        body: JSON.stringify({ messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })), language: selectedLang, sessionId: sessionIdRef.current, inputMode: wasVoice ? "voice" : "text", currentPage: context || "homepage", currentProductId: productId, triggerType: "user-initiated" }),
       });
       const data = await res.json();
       const aMsg: Message = { role: "assistant", content: data.reply, emotion: data.emotion || "happy", productsToShow: data.productsToShow, language: data.detectedLanguage || selectedLang, timestamp: Date.now() };

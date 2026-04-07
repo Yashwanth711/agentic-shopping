@@ -28,7 +28,7 @@ export default function ProductPage() {
 
   return (
     <div className="h-screen bg-gray-50">
-      <AgentPanel context="pdp" />
+      <AgentPanel context="pdp" productId={product.id} />
       <div className="overflow-y-auto h-full">
       {/* Header */}
       <header className="bg-white shadow-sm border-b px-6 py-3">
