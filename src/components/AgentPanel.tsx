@@ -56,14 +56,26 @@ function ChatProductCard({ product, onAddToCart }: { product: typeof products[0]
 }
 
 // Extract product IDs mentioned in message and render cards
-function MessageWithCards({ text, onAddToCart }: { text: string; onAddToCart: (id: string) => void }) {
-  // Find all products mentioned in the message
-  const mentionedProducts: typeof products[0][] = [];
-  products.forEach(p => {
-    if (text.includes(p.name)) mentionedProducts.push(p);
-  });
+function MessageWithCards({ text, productIds, onAddToCart }: { text: string; productIds?: string[]; onAddToCart: (id: string) => void }) {
+  // Use API-provided product IDs first, then fallback to name matching
+  let matchedProducts: typeof products[0][] = [];
 
-  // Render text with bold product names as links
+  if (productIds && productIds.length > 0) {
+    // Use IDs from API response (most reliable)
+    matchedProducts = productIds
+      .map(id => products.find(p => p.id === id))
+      .filter((p): p is typeof products[0] => !!p);
+  }
+
+  // Also try name matching as fallback
+  if (matchedProducts.length === 0) {
+    const textLower = text.toLowerCase();
+    products.forEach(p => {
+      if (textLower.includes(p.name.toLowerCase())) matchedProducts.push(p);
+    });
+  }
+
+  // Render text — make product names clickable (with or without bold markers)
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
   const renderedText = (
     <span>
@@ -74,7 +86,22 @@ function MessageWithCards({ text, onAddToCart }: { text: string; onAddToCart: (i
           if (p) return <Link key={i} href={`/product/${p.id}`} onClick={() => window.dispatchEvent(new CustomEvent("saheli-close"))} className="font-bold text-amber-400 hover:text-amber-300 underline underline-offset-2">{m[1]}</Link>;
           return <strong key={i} className="text-white">{m[1]}</strong>;
         }
-        return <span key={i}>{part}</span>;
+        // Also linkify product names that appear without bold markers
+        let segment = part;
+        for (const p of matchedProducts) {
+          if (segment.toLowerCase().includes(p.name.toLowerCase())) {
+            const idx = segment.toLowerCase().indexOf(p.name.toLowerCase());
+            const actualName = segment.slice(idx, idx + p.name.length);
+            segment = segment.replace(actualName, `{{PRODUCT:${p.id}:${actualName}}}`);
+          }
+        }
+        // Render segments with product links
+        const subParts = segment.split(/({{PRODUCT:[^}]+}})/g);
+        return <span key={i}>{subParts.map((sp, j) => {
+          const pm = sp.match(/{{PRODUCT:([^:]+):(.+)}}/);
+          if (pm) return <Link key={j} href={`/product/${pm[1]}`} onClick={() => window.dispatchEvent(new CustomEvent("saheli-close"))} className="font-semibold text-amber-400 hover:text-amber-300 underline underline-offset-2">{pm[2]}</Link>;
+          return <span key={j}>{sp}</span>;
+        })}</span>;
       })}
     </span>
   );
@@ -82,9 +109,9 @@ function MessageWithCards({ text, onAddToCart }: { text: string; onAddToCart: (i
   return (
     <>
       <p className="whitespace-pre-wrap leading-relaxed">{renderedText}</p>
-      {mentionedProducts.length > 0 && (
+      {matchedProducts.length > 0 && (
         <div className="flex gap-2 overflow-x-auto mt-3 pb-1 -mx-1 px-1">
-          {mentionedProducts.slice(0, 5).map(p => (
+          {matchedProducts.slice(0, 8).map(p => (
             <ChatProductCard key={p.id} product={p} onAddToCart={onAddToCart} />
           ))}
         </div>
@@ -305,7 +332,7 @@ export default function AgentPanel({ onNavigate, context, productId }: {
       if (stopTimer) clearTimeout(stopTimer);
       if (e.results[e.results.length - 1].isFinal) {
         lastTranscriptRef.current = t;
-        stopTimer = setTimeout(() => { try { rec.stop(); } catch {} }, 3000);
+        stopTimer = setTimeout(() => { try { rec.stop(); } catch {} }, 1200);
       }
     };
     rec.onerror = () => { if (stopTimer) clearTimeout(stopTimer); setIsListening(false); };
@@ -766,7 +793,7 @@ export default function AgentPanel({ onNavigate, context, productId }: {
                 : "bg-gray-800/90 text-gray-200 border border-gray-700/50 rounded-bl-sm"
             }`}>
               {msg.role === "assistant"
-                ? <MessageWithCards text={msg.content} onAddToCart={addToCart} />
+                ? <MessageWithCards text={msg.content} productIds={msg.productsToShow} onAddToCart={addToCart} />
                 : <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
               }
               <div className="flex items-center justify-between mt-1.5">
