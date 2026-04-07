@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { products, Product } from "@/data/products";
+import { searchProducts } from "@/lib/rag";
+
 const GSHEET_WEBHOOK = "https://script.google.com/macros/s/AKfycbxd1mug0pGQJeeoNtrD_MIBE3x4oA3Gk4C2l9neZvfbC7yzaaKHesNZt-6-hKgYoHn2Cw/exec";
 
 // Fire-and-forget log to Google Sheet
@@ -11,41 +13,84 @@ function logToSheet(sessionId: string, role: string, message: string, language: 
   }).catch(() => {});
 }
 
-// Build compact product catalog for AI — one line per product, ~3KB total
-const PRODUCT_CATALOG = products.map(p =>
-  `${p.id}|${p.name}|${p.category}|₹${p.price}|${p.color}|${p.fabric}|${p.tags[0]}|★${p.rating}(${p.reviewCount})|${p.occasion.join("/")}|${p.inventory}left`
-).join("\n");
+// Category counts for inventory awareness
+const CATEGORY_COUNTS = products.reduce((acc, p) => {
+  acc[p.category] = (acc[p.category] || 0) + 1;
+  return acc;
+}, {} as Record<string, number>);
+const INVENTORY_SUMMARY = Object.entries(CATEGORY_COUNTS).map(([c, n]) => `${c}: ${n}`).join(", ");
 
-const SYSTEM_PROMPT = `You are Saheli — a friendly, respectful, top-performing offline store salesperson. Think of yourself as the best salesman at a popular Indian clothing store. You're warm, humble, and genuinely want to help customers find what they love.
+// === MODULAR SYSTEM PROMPT ===
 
-YOUR STYLE:
-- Always respectful — use "Sir" or "Madam" after detecting gender from conversation (default to gender-neutral until clear)
-- Talk naturally like a real Indian salesperson, mix English words like real Indians do
-- Humble and helpful — "Sir, ye dekhiye, bahut accha piece hai" / "Madam, idi chala baguntundi"
-- If customer seems unhappy → always apologize first and correct yourself
-- If you don't have what they want → honestly say so and suggest a broader category or ask what else to show
-- Short, punchy responses — 2-3 short paragraphs max, no essays
+const CORE_IDENTITY = `You are Saheli — a warm, respectful Indian clothing store salesperson. You have a name, a personality, and genuine care for every customer. You speak naturally like a real Indian shopkeeper — mixing English words the way Indians actually talk.
 
-PRODUCT CATALOG (${products.length} products):
-${PRODUCT_CATALOG}
+OUR STORE HAS: ${INVENTORY_SUMMARY} (Total: ${products.length} products)`;
 
-CONVERSATION FLOW:
-1. If user asks for a CATEGORY (sarees, kids, kurtis) without occasion/budget → ask ONE question: "Koi occasion ke liye ya budget batayenge Sir/Madam?" — then show products in the NEXT message
-2. If user gives category + occasion OR budget → show 3-5 products immediately with **bold names**
+const CONVERSATION_RULES = `CONVERSATION FLOW:
+1. NEED CLARIFICATION: If user asks for a CATEGORY without occasion/budget → ask ONE question: "Koi occasion ke liye ya budget batayenge?" — then show products in the NEXT message
+2. If user gives category + occasion OR budget → show 3-5 products immediately
 3. If user gives category + occasion + budget → show products right away, no more questions
 4. NEVER ask more than 1 clarifying question per message
-5. NEVER refuse to show products after 2 exchanges — if user asks twice, show your best picks
-6. After showing products → "inme se koi pasand aaya Sir/Madam?"
-7. HESITATION: quote ratings, review count, return policy
-8. NUDGE: "Ye pasand aa rha ho toh order lagadu Sir/Madam?"
-9. CROSS-SELL: suggest ONE complementary item (blouse with saree)
+5. NEVER refuse to show products after 2 exchanges — show your best picks
+6. ASSISTED BROWSING: Start with "Thank you!", briefly describe what you're showing, end with "inme se koi pasand aaya?"
+7. NUDGE: "Ye pasand aa rha ho toh order lagadu?"
+8. CROSS-SELL: suggest ONE complementary item (blouse with saree)
+
+HESITATION HANDLING — when customer says "expensive", "pata nahi", "soch ke batata hoon", "thoda mehnga hai":
+Step 1 — Acknowledge: "Haan, samajh sakti hoon..."
+Step 2 — Pick ONE based on situation:
+  - Price doubt → "Lekin dekho, ₹X mein itne reviews — X log ne kharida isi occasion ke liye"
+  - Quality doubt → Quote the product rating and a positive review snippet
+  - Size doubt → State exact measurements if available ("shoulder X inch, length Y inch")
+  - General hesitation → Mention return/exchange policy ONCE: "Agar pasand na aaye toh 7 days mein return kar sakte ho"
+Step 3 — Offer alternative: "Ek aur option dikhaaun thoda alag budget mein?"
+Never repeat the same hesitation tactic twice in one conversation.
 
 RULES:
-- Use EXACT names, prices, ratings from catalog — never invent products or store facts
-- If you don't know something, say "Sir/Madam, ye detail mein team se confirm karke batati hoon"
-- Before showing products, briefly say what you understood from their request in natural language
-- Mention product names in **bold**
-- Respond in the customer's language`;
+- ONLY recommend products from the MATCHING PRODUCTS list — never invent products
+- Use EXACT names, prices, ratings — never make up facts
+- If you don't know something, say "ye detail team se confirm karke batati hoon"
+- Before showing products, briefly say what you understood from their request
+- If customer seems unhappy → ALWAYS apologize first, then correct yourself
+- If you don't have what they want → honestly say so and suggest a broader category`;
+
+const VOICE_FORMAT_RULES = `VOICE RESPONSE FORMAT:
+- Maximum 2-3 SHORT sentences per response when no products to show
+- When showing products: name + price + one detail per product, then STOP
+- No markdown, no bullet points, no bold, no asterisks — pure spoken language only
+- End EVERY response with ONE question (not two, not zero)
+- Use "..." for natural breath pauses in longer responses`;
+
+const ANTI_PATTERNS = `NEVER DO:
+- Never repeat a question the customer already answered
+- Never show more than 5 products in one response
+- Never use markdown formatting of any kind
+- Never say "I'm an AI" or "As an AI assistant" — you are Saheli, period
+- Never ask two questions in the same response
+- Never re-suggest a product the customer already rejected`;
+
+// Fixed opening greetings — hardcoded, never AI-generated
+const OPENING_SCRIPTS: Record<string, string> = {
+  default: "Namaste! Main Saheli hoon... aap mujhse apni bhasha mein baat karke shopping kar sakte hain. Aaj kya dekhna chahenge?",
+  pdp: "Namaste! Main Saheli hoon... kya aapko ye product pasand aaya? Koi doubt hai ya kuch aur dikhaaun?",
+  inactive: "Kuch dhundh rahe hain kya? Main madad kar sakti hoon.",
+};
+
+// Build system prompt dynamically per call
+function buildSystemPrompt(gender: string | null, langName: string): string {
+  const genderLine = gender === "female" ? "Always address customer as 'Madam'."
+    : gender === "male" ? "Always address customer as 'Sir'."
+    : "Use gender-neutral language. Once gender is clear from conversation, use Sir or Madam consistently.";
+
+  return [
+    CORE_IDENTITY,
+    genderLine,
+    CONVERSATION_RULES,
+    VOICE_FORMAT_RULES,
+    ANTI_PATTERNS,
+    `RESPOND IN: ${langName} only`,
+  ].join("\n\n");
+}
 
 const LANG_NAMES: Record<string, string> = {
   hi: "Hindi", te: "Telugu", ta: "Tamil", kn: "Kannada", ml: "Malayalam",
@@ -66,7 +111,7 @@ function detectLanguage(text: string): string | null {
   return null;
 }
 
-// Smart product search — finds relevant products based on user message
+// Legacy keyword search — kept for demo fallback only
 function findRelevantProducts(message: string, lang: string): Product[] {
   const msg = message.toLowerCase();
   let results: Product[] = [];
@@ -196,7 +241,7 @@ function extractProductIds(text: string): string[] {
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, language, sessionId, inputMode } = await req.json();
+    const { messages, language, sessionId, inputMode, currentPage, currentProductId, triggerType } = await req.json();
 
     // Log user message to Google Sheet
     const sid = sessionId || "unknown";
@@ -224,14 +269,74 @@ export async function POST(req: NextRequest) {
       : detectedLang;
     const langName = LANG_NAMES[finalLang] || "English";
 
+    // Fixed greeting for first message — skip AI call entirely
+    const isFirstMessage = messages.length === 1 && messages[0]?.role === "user" &&
+      (messages[0].content.toLowerCase().includes("hi") || messages[0].content.toLowerCase().includes("hello") ||
+       messages[0].content.toLowerCase().includes("namaste") || messages[0].content.length < 20);
+    if (isFirstMessage) {
+      // Context-aware greeting based on page type
+      let greeting = OPENING_SCRIPTS.default;
+      const showProducts: string[] = [];
+      if (currentPage === "pdp" && currentProductId) {
+        const product = products.find(p => p.id === currentProductId);
+        greeting = product
+          ? `Namaste! Main Saheli hoon... kya aapko ${product.name} pasand aaya? Koi doubt hai quality, size ya fit ke baare mein? Ya aur options dikhaaun?`
+          : OPENING_SCRIPTS.pdp;
+        if (currentProductId) showProducts.push(currentProductId);
+      } else if (triggerType === "self-triggered") {
+        greeting = OPENING_SCRIPTS.inactive;
+      }
+      logToSheet(sid, "assistant", greeting, finalLang, currentPage || "homepage");
+      return NextResponse.json({
+        reply: greeting,
+        emotion: "greeting",
+        productsToShow: showProducts,
+        detectedLanguage: finalLang,
+      });
+    }
+
+    // Build page context for AI
+    let pageContext = "";
+    if (currentPage === "pdp" && currentProductId) {
+      const product = products.find(p => p.id === currentProductId);
+      if (product) {
+        const topReview = product.reviews?.find(r => r.rating >= 4);
+        pageContext = `\n\n[CONTEXT: Customer is viewing ${product.name} — ₹${product.price} (${product.discount}% off, MRP ₹${product.mrp}) | ${product.color} ${product.fabric} | ★${product.rating} (${product.reviewCount} reviews) | ${product.inventory} in stock`;
+        if (topReview) pageContext += ` | Top review: "${topReview.text}"`;
+        pageContext += `]`;
+      }
+    }
+
+    // RAG: Search for relevant products based on user message
+    let ragProducts = "";
+    const activeKey = geminiKey || anthropicKey || "";
+    if (activeKey && rawMsg.length > 2) {
+      try {
+        const relevant = await searchProducts(rawMsg, activeKey, 8);
+        if (relevant.length > 0) {
+          ragProducts = `\n\nMATCHING PRODUCTS FROM OUR STORE (recommend from these):\n${relevant.map((p, i) => {
+            const topReview = p.reviews?.find(r => r.rating >= 4);
+            let line = `${i + 1}. ${p.name} | ${p.category} | ₹${p.price} (${p.discount}% off, MRP ₹${p.mrp}) | ${p.color} | ${p.fabric} | ★${p.rating}(${p.reviewCount}) | ${p.occasion.join("/")} | ${p.inventory} left`;
+            if (topReview) line += ` | Review: "${topReview.text}"`;
+            return line;
+          }).join("\n")}`;
+        }
+      } catch (e) {
+        console.warn("RAG search failed, continuing without:", e);
+      }
+    }
+
+    // Combine page context with RAG products
+    ragProducts = pageContext + ragProducts;
+
     // Route to selected provider, fallback to demo on any error
     let response: NextResponse;
     if (provider === "gemini" && geminiKey) {
-      response = await handleGemini(messages, geminiKey, finalLang, langName);
+      response = await handleGemini(messages, geminiKey, finalLang, langName, ragProducts);
     } else if (provider === "anthropic" && anthropicKey) {
-      response = await handleAnthropic(messages, anthropicKey, finalLang, langName);
+      response = await handleAnthropic(messages, anthropicKey, finalLang, langName, ragProducts);
     } else if (provider === "deepseek" && deepseekKey) {
-      response = await handleDeepSeek(messages, deepseekKey, finalLang, langName);
+      response = await handleDeepSeek(messages, deepseekKey, finalLang, langName, ragProducts);
     } else {
       response = NextResponse.json(getDemoResponse(messages, finalLang));
     }
@@ -260,14 +365,17 @@ async function handleAnthropic(
   apiKey: string,
   detectedLang: string,
   langName: string,
+  ragProducts: string = "",
 ) {
   const langInstruction = detectedLang !== "en"
     ? `\n\nCRITICAL: Respond ENTIRELY in ${langName}. NOT Hindi, NOT English — only ${langName}.`
     : "";
 
   const augmentedMessages = messages.map((m: { role: string; content: string }, i: number) => {
-    if (i === messages.length - 1 && m.role === "user" && detectedLang !== "en") {
-      return { role: m.role, content: m.content + `\n[Respond in ${langName} only]` };
+    if (i === messages.length - 1 && m.role === "user") {
+      let extra = ragProducts;
+      if (detectedLang !== "en") extra += `\n[Respond in ${langName} only]`;
+      return { role: m.role, content: m.content + extra };
     }
     return { role: m.role, content: m.content };
   });
@@ -282,7 +390,7 @@ async function handleAnthropic(
     body: JSON.stringify({
       model: "claude-haiku-4-5-20251001",
       max_tokens: 500,
-      system: SYSTEM_PROMPT + langInstruction,
+      system: buildSystemPrompt(null, langName),
       messages: augmentedMessages,
     }),
   });
@@ -321,16 +429,20 @@ async function handleDeepSeek(
   apiKey: string,
   detectedLang: string,
   langName: string,
+  ragProducts: string = "",
 ) {
   const langInstruction = detectedLang !== "en"
     ? `\n\nCRITICAL: Respond ENTIRELY in ${langName}.`
     : "";
 
   const augmentedMessages = [
-    { role: "system", content: SYSTEM_PROMPT + langInstruction },
-    ...messages.map((m: { role: string; content: string }) => ({
-      role: m.role, content: m.content,
-    })),
+    { role: "system", content: buildSystemPrompt(null, langName) },
+    ...messages.map((m: { role: string; content: string }, i: number) => {
+      if (i === messages.length - 1 && m.role === "user" && ragProducts) {
+        return { role: m.role, content: m.content + ragProducts };
+      }
+      return { role: m.role, content: m.content };
+    }),
   ];
 
   // Agent Router API (OpenAI-compatible)
@@ -383,6 +495,7 @@ async function handleGemini(
   apiKey: string,
   detectedLang: string,
   langName: string,
+  ragProducts: string = "",
 ) {
   const langInstruction = detectedLang !== "en"
     ? ` CRITICAL: Respond ENTIRELY in ${langName}. NOT English, NOT Hindi — only ${langName}.`
@@ -390,7 +503,7 @@ async function handleGemini(
 
   // Build Gemini messages — system prompt as first user turn, then conversation
   const geminiContents: { role: string; parts: { text: string }[] }[] = [
-    { role: "user", parts: [{ text: SYSTEM_PROMPT + langInstruction + "\n\nSay OK." }] },
+    { role: "user", parts: [{ text: buildSystemPrompt(null, langName) + "\n\nSay OK." }] },
     { role: "model", parts: [{ text: "OK" }] },
   ];
 
@@ -398,8 +511,9 @@ async function handleGemini(
     const m = messages[i];
     const role = m.role === "assistant" ? "model" : "user";
     let text = m.content;
-    if (i === messages.length - 1 && m.role === "user" && detectedLang !== "en") {
-      text += `\n[Respond in ${langName} only]`;
+    if (i === messages.length - 1 && m.role === "user") {
+      text += ragProducts;
+      if (detectedLang !== "en") text += `\n[Respond in ${langName} only]`;
     }
     geminiContents.push({ role, parts: [{ text }] });
   }
