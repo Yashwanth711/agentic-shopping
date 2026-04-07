@@ -577,7 +577,7 @@ export default function AgentPanel({ onNavigate, context, productId }: {
       if (data.detectedLanguage && data.detectedLanguage !== selectedLang) setSelectedLang(data.detectedLanguage);
       // Switch to chat mode after 2 exchanges so user can see full conversation
       const userMsgCount = [...messages, userMsg].filter(m => m.role === "user").length;
-      if (mode === "voice" && userMsgCount >= 2) setMode("chat");
+      if (mode === "voice" && (userMsgCount >= 2 || (data.productsToShow && data.productsToShow.length > 0))) setMode("chat");
       speakText(data.reply, data.detectedLanguage || selectedLang);
       if (data.productsToShow?.length && onNavigate) onNavigate(data.productsToShow);
     } catch {
