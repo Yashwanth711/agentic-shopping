@@ -443,13 +443,43 @@ export default function AgentPanel({ onNavigate, context, productId }: {
   // Language select
   const handleLangSelect = useCallback((lang: string) => {
     setSelectedLang(lang); setLangChosen(true); setShowLangPicker(false);
-    const greetings: Record<string, string> = {
-      en: "Namaste! I'm Saheli, your style guide. Tell me, what's the occasion? I'll find you the perfect outfit!",
-      hi: "Namaste! Mein Saheli hu, aapki style guide. Bataiye, kaunsa occasion hai? Mein aapke liye perfect outfit dhundh lungi!",
-      te: "Namaskaram! Nenu Saheli, mee style guide. Cheppandi, occasion emiti? Meeku perfect outfit chupisthanu!",
-      ta: "Vanakkam! Naan Saheli, ungal style guide. Sollunga, enna occasion? Ungalukku perfect outfit kandupidikkiren!",
-    };
-    const msg = greetings[lang] || greetings.en;
+    // Context-aware greeting based on current page
+    let msg: string;
+    const productName = productId ? products.find(p => p.id === productId)?.name : null;
+
+    if (context === "pdp" && productName) {
+      const pdpGreetings: Record<string, string> = {
+        en: `Namaste! I'm Saheli. Do you like ${productName}? Any doubts about quality, size or fit? Or shall I show more options?`,
+        hi: `Namaste! Main Saheli hoon... kya aapko ${productName} pasand aaya? Koi doubt hai quality, size ya fit ke baare mein? Ya aur options dikhaaun?`,
+        te: `Namaskaram! Nenu Saheli. ${productName} meeku nachinda? Quality, size gurinchi emannina doubts unnaya? Leda inka options chupinchana?`,
+        ta: `Vanakkam! Naan Saheli. ${productName} ungalukku pudichuda? Quality, size pathi enna doubt? Vera options venuma?`,
+        kn: `Namaskara! Naanu Saheli. ${productName} nimge ishta aayitha? Quality, size bagge yavude doubt ide? Bere options toorsnaa?`,
+        ml: `Namaskaram! Njan Saheli. ${productName} ishtamaayo? Quality, size kurichu enkilum samsayam undo? Verey options kaanikkatte?`,
+        bn: `Nomoshkar! Ami Saheli. ${productName} apnar pochondo hoyeche? Quality, size niye kono proshno ache? Aro options dekhaben?`,
+        mr: `Namaskar! Mi Saheli. ${productName} tumhala aavadla? Quality, size baaddal kahi shanka aahe? Aankhi options dakhvu?`,
+        gu: `Namaste! Hu Saheli chhu. ${productName} tamne gamyu? Quality, size vishe koi doubt chhe? Bija options batavu?`,
+        pa: `Sat Sri Akal! Main Saheli haan. ${productName} tuhanoo pasand aaya? Quality, size baare koi doubt? Hor options dikhaavan?`,
+        or: `Namaskar! Mu Saheli. ${productName} apananku bhala lagila? Quality, size baare kichu doubt achhi? Aau options dekhibe?`,
+        ur: `Aadaab! Main Saheli hoon. ${productName} pasand aaya? Quality, size ke baare mein koi sawaal? Ya aur options dikhaaun?`,
+      };
+      msg = pdpGreetings[lang] || pdpGreetings.en;
+    } else {
+      const greetings: Record<string, string> = {
+        en: "Namaste! I'm Saheli... you can talk to me in your language and shop easily. What would you like to see?",
+        hi: "Namaste! Main Saheli hoon... aap mujhse apni bhasha mein baat karke shopping kar sakte hain. Aaj kya dekhna chahenge?",
+        te: "Namaskaram! Nenu Saheli. Mee bhashaloni naatho maatlaadi shopping cheyavachchu. Emi chudaalanukunnarru?",
+        ta: "Vanakkam! Naan Saheli. Ungal mozhiyil ennudan pesi shopping seyyalaam. Enna paarkanum?",
+        kn: "Namaskara! Naanu Saheli. Nimma bhaasheyalli naanu maathaadi shopping maadbahudu. Enu nodbekku?",
+        ml: "Namaskaram! Njan Saheli. Ningalude bhaashayil ennod samsaarikku, shopping cheyyaam. Entha kaanikkatte?",
+        bn: "Nomoshkar! Ami Saheli. Apnar bhaashay aamar sathe kotha bole shopping korte parben. Ki dekhben?",
+        mr: "Namaskar! Mi Saheli. Tumchya bhashet majhyashi bola ani shopping kara. Kay baghayche aahe?",
+        gu: "Namaste! Hu Saheli chhu. Tamari bhaasha ma mari sathe vaat kari ne shopping kari shako chho. Shu jovanu chhe?",
+        pa: "Sat Sri Akal! Main Saheli haan. Apni boli vich mere naal gall karo te shopping karo. Ki dekhna chahoge?",
+        or: "Namaskar! Mu Saheli. Apana bhasare mora sathe katha karantu ebam shopping karantu. Kana dekhibe?",
+        ur: "Aadaab! Main Saheli hoon. Aap apni zuban mein mujhse baat karke shopping kar sakte hain. Aaj kya dekhna chahenge?",
+      };
+      msg = greetings[lang] || greetings.en;
+    }
     setMessages([{ role: "assistant", content: msg, emotion: "greeting", timestamp: Date.now() }]);
     setMode("voice");
     setTimeout(() => speakText(msg, lang), 500);
