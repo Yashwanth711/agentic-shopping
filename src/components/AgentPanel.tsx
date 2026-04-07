@@ -448,51 +448,65 @@ export default function AgentPanel({ onNavigate, context, productId }: {
     }
   }, [isListening, hasNativeSpeech, startRecording, stopRecording, isSpeaking, selectedLang]);
 
+  // Flag: use server-side TTS for natural Indian voice (set to false to revert to browser TTS)
+  const USE_SERVER_TTS = true;
+
   const speakText = useCallback((text: string, lang: string = selectedLang) => {
-    if (!("speechSynthesis" in window)) return;
     if (isListening) {
       if (hasNativeSpeech && recognitionRef.current) recognitionRef.current.stop();
       else if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop();
       setIsListening(false);
     }
-    window.speechSynthesis.cancel();
+
     const clean = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").replace(/\*\*/g, "").replace(/\*/g, "").trim();
     if (!clean) return;
+
+    if (USE_SERVER_TTS) {
+      // Server-side TTS — natural Indian voice
+      setIsSpeaking(true);
+      fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean, language: lang }),
+      })
+        .then(res => {
+          if (!res.ok) throw new Error("TTS failed");
+          return res.blob();
+        })
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.onended = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
+          audio.onerror = () => { setIsSpeaking(false); URL.revokeObjectURL(url); };
+          audio.play().catch(() => setIsSpeaking(false));
+        })
+        .catch(() => {
+          // Fallback to browser TTS if server fails
+          setIsSpeaking(false);
+          browserSpeak(clean, lang);
+        });
+    } else {
+      browserSpeak(clean, lang);
+    }
+  }, [selectedLang, isListening]);
+
+  // Browser TTS fallback
+  const browserSpeak = useCallback((clean: string, lang: string) => {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(clean);
     const speechLang = LANG_CODES[lang]?.speech || "en-IN";
     u.lang = speechLang; u.rate = 0.85; u.pitch = 1.05;
-
-    // Pick the best Indian voice — prioritize native Indian voices over US/UK
     const voices = window.speechSynthesis.getVoices();
-    const langPrefix = speechLang.split("-")[0]; // "hi", "te", "ta", etc.
-
-    const findVoice = () => {
-      // Priority 1: Exact match with Indian locale + female
-      const indianFemale = voices.find(v => v.lang === speechLang && (v.name.toLowerCase().includes("female") || v.name.toLowerCase().includes("woman") || v.name.toLowerCase().includes("lekha") || v.name.toLowerCase().includes("aditi")));
-      if (indianFemale) return indianFemale;
-
-      // Priority 2: Exact Indian locale (hi-IN, te-IN, etc.)
-      const indianExact = voices.find(v => v.lang === speechLang);
-      if (indianExact) return indianExact;
-
-      // Priority 3: Language match with "India" or "IN" in name
-      const indianNamed = voices.find(v => v.lang.startsWith(langPrefix) && (v.name.includes("India") || v.name.includes(" IN") || v.name.includes("(India)")));
-      if (indianNamed) return indianNamed;
-
-      // Priority 4: Any voice matching language prefix (avoid en-US for Hindi)
-      const langMatch = voices.find(v => v.lang.startsWith(langPrefix) && !v.lang.includes("US") && !v.lang.includes("GB"));
-      if (langMatch) return langMatch;
-
-      // Priority 5: Any voice with language prefix
-      return voices.find(v => v.lang.startsWith(langPrefix));
-    };
-
-    const v = findVoice();
+    const langPrefix = speechLang.split("-")[0];
+    const v = voices.find(v => v.lang === speechLang)
+      || voices.find(v => v.lang.startsWith(langPrefix) && (v.name.includes("India") || v.name.includes(" IN")))
+      || voices.find(v => v.lang.startsWith(langPrefix) && !v.lang.includes("US"))
+      || voices.find(v => v.lang.startsWith(langPrefix));
     if (v) u.voice = v;
-
     u.onstart = () => setIsSpeaking(true); u.onend = () => setIsSpeaking(false); u.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.speak(u);
-  }, [selectedLang, isListening]);
+  }, []);
 
   // Language select
   const handleLangSelect = useCallback((lang: string) => {
